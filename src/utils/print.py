@@ -4,15 +4,21 @@ from rich.console import Console
 from rich.table import Table
 
 
-def format_float(value: float) -> str:
+def format_float(value: float, decimals: int = 2, floor: bool = True) -> str:
     """
-    This removes all decimals after the 2nd one, i.e., 12.345 -> 12.34
+    Formats a float value with specified number of decimal places.
+    Args:
+        value: The float value to format
+        decimals: Number of decimal places to keep (default: 2)
+        floor: If True, uses math.floor for rounding, otherwise uses regular rounding (default: True)
     """
-    return f"{math.floor(value * 100) / 100:.2f}"
+    if floor:
+        return f"{math.floor(value * (10 ** decimals)) / (10 ** decimals):.{decimals}f}"
+    return f"{round(value, decimals):.{decimals}f}"
 
 
-def print_results(results: list[float | None, float | None]):
-    table = Table()
+def print_results(results: list[float | None, float | None], effective_take: float):
+    table = Table(caption_style="white i")
 
     table.add_column("Period", justify="right", style="blue")
     table.add_column("APY", justify="center", style="magenta")
@@ -26,7 +32,7 @@ def print_results(results: list[float | None, float | None]):
         formatted_apy = (
             "N/A"
             if apy == None
-            else (f"{format_float(apy)}%" if apy >= 0.01 else "<0.01%")
+            else (f"{format_float(apy, 2)}%" if apy >= 0.01 else "<0.01%")
         )
 
         formatted_period_emission = (
@@ -45,7 +51,11 @@ def print_results(results: list[float | None, float | None]):
             formatted_period_emission,
         )
 
+    table.caption = f"Effective Take Rate: [yellow]{format_float(effective_take * 100, 1, floor=False)}%[/yellow]"
+
     console = Console()
+
+    console.print("\n")
 
     if len(results) > 0:
         console.print(table)

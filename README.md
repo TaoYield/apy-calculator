@@ -1,10 +1,10 @@
 # TaoYield APY Calculator
 
-This repository contains a Python script that calculates the APY for a given Bittensor validator. The implementation includes access to the on-chain data, mathematics, and logic to calculate APYs, exactly the same as we use for [TaoYield](https://taoyield.com).
+This repository contains a Python script that calculates the APY and effective take rate for a given Bittensor validator. The implementation includes access to the on-chain data, mathematics, and logic to make the calculations, exactly the same as we use for [TaoYield](https://taoyield.com).
 
 For a more detailed explanation of the mathematics, please refer to our [documentation](https://taoyield.com/docs).
 
-After running the script, you can compare the results with the APYs on the [TaoYield](https://taoyield.com) dashboard. If you find any discrepancies, re-run the script or wait 15-30 minutes as there's a chance the validator's data is still being updated on the dashboard. For 30d period, especially when using the Opentensor Foundation archive node, the calculation time may be significant to the point where the validator's data on the dashboard might get updated during the calculation, potentially leading to differences between the script's output and the displayed APY.
+After running the script, you can compare the results with the [TaoYield](https://taoyield.com) dashboard. If you find any discrepancies, re-run the script or wait 15-30 minutes as there's a chance the validator's data is still being updated on the dashboard. For 30d period, especially when using the Opentensor Foundation archive node, the calculation time may be significant to the point where the validator's data on the dashboard might get updated during the calculation, potentially leading to differences between the script's output and the displayed APY.
 
 ## Running the script with Docker (recommended)
 

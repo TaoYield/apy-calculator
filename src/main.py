@@ -5,6 +5,7 @@ from rich.panel import Panel
 
 from constants import DIVIDERS
 from get_hotkey_data import get_hotkey_data
+from get_effective_take import get_effective_take
 from get_blocks_to_fetch import get_blocks_to_fetch
 from utils.env import parse_env_data
 from utils.print import print_results
@@ -21,13 +22,13 @@ yield_sum = 0
 emission_sum = 0
 blocks_count = 0
 invalid_blocks = 0
+
 results = []
+effective_take = None
 
 with Progress(
     SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn()
 ) as progress:
-    task = progress.add_task("[cyan]Fetching data", total=len(blocks))
-
     progress.console.print(
         Panel(f"Hotkey: [b][i][magenta]{hotkey}[/magenta][/i][/b]", width=60)
     )
@@ -37,6 +38,21 @@ with Progress(
         progress.console.print(
             f"Processing block [blue]{block}[/blue] [{blocks_count}/{len(blocks)}]"
         )
+
+        if blocks_count == 1:
+            task_subnets = progress.add_task("[cyan]Fetching subnets", total=1)
+            netuids = subtensor.get_subnets(block)
+
+            progress.advance(task_subnets)
+
+            task_take = progress.add_task(
+                "[cyan]Calculating effective take rate", total=len(netuids)
+            )
+            effective_take = get_effective_take(
+                subtensor, hotkey, netuids, block, progress, task_take
+            )
+
+            task = progress.add_task("[cyan]Fetching emissions", total=len(blocks))
 
         data = get_hotkey_data(subtensor, hotkey, block)
         if data is not None:
@@ -68,4 +84,4 @@ with Progress(
 
                 break
 
-print_results(results)
+print_results(results, effective_take)
