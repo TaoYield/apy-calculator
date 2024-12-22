@@ -5,9 +5,14 @@ from constants import BLOCK_INTERVAL
 
 
 def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
-    emission = subtensor.query_subtensor(
+    untouchable_emission = subtensor.query_subtensor(
+        "PendingdHotkeyEmissionUntouchable", block, params=[hotkey]
+    ).value
+    raw_emission = subtensor.query_subtensor(
         "PendingdHotkeyEmission", block, params=[hotkey]
     ).value
+
+    emission = raw_emission - untouchable_emission
 
     # It is important to get the stake at the start of the interval, and not at the end of it.
     start_block = block - BLOCK_INTERVAL
@@ -23,9 +28,14 @@ def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
         subtensor.query_subtensor("Delegates", block, params=[hotkey]).value
     )
 
-    emission_start_block = subtensor.query_subtensor(
+    untouchable_emission_start_block = subtensor.query_subtensor(
+        "PendingdHotkeyEmissionUntouchable", start_block, params=[hotkey]
+    ).value
+    raw_emission_start_block = subtensor.query_subtensor(
         "PendingdHotkeyEmission", start_block, params=[hotkey]
     ).value
+
+    emission_start_block = raw_emission_start_block - untouchable_emission_start_block
 
     emission_before_take = emission - emission_start_block
 
@@ -38,9 +48,17 @@ def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
     # If the last drain block is within the interval, we need to correct the emission.
     if last_drain_block <= block and last_drain_block > start_block:
         block_before_drain = last_drain_block - 1
-        emission_before_drain = subtensor.query_subtensor(
+
+        untouchable_emission_before_drain = subtensor.query_subtensor(
+            "PendingdHotkeyEmissionUntouchable", block_before_drain, params=[hotkey]
+        ).value
+        raw_emission_before_drain = subtensor.query_subtensor(
             "PendingdHotkeyEmission", block_before_drain, params=[hotkey]
         ).value
+
+        emission_before_drain = (
+            raw_emission_before_drain - untouchable_emission_before_drain
+        )
 
         emission_before_take = emission_before_drain - emission_start_block + emission
 

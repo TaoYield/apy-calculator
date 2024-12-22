@@ -124,18 +124,15 @@ def get_effective_take(
 
         hotkey_to_index = {key: idx for idx, key in enumerate(metagraph.hotkeys)}
 
-        hotkey_index = hotkey_to_index.get(hotkey)
-        if hotkey_index is None:
-            progress.advance(task)
-            continue
+        if hotkey in hotkey_to_index:
+            hotkey_index = hotkey_to_index[hotkey]
+            dividends = metagraph.dividends[hotkey_index]
+            total_dividends += dividends
 
-        dividends = metagraph.dividends[hotkey_index]
-        total_dividends += dividends
-
-        parent_keys_dividends = get_parent_keys_dividends(
-            subtensor, hotkey, netuid, dividends, block
-        )
-        total_parent_keys_dividends += parent_keys_dividends
+            parent_keys_dividends = get_parent_keys_dividends(
+                subtensor, hotkey, netuid, dividends, block
+            )
+            total_parent_keys_dividends += parent_keys_dividends
 
         child_keys_dividends, child_keys_fees = get_child_keys_dividends_and_fees(
             subtensor, hotkey, metagraph, netuid, block
