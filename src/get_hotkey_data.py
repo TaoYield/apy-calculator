@@ -5,9 +5,14 @@ from constants import BLOCK_INTERVAL
 
 
 def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
+    untouchable_emission = subtensor.query_subtensor(
+        "PendingdHotkeyEmissionUntouchable", block, params=[hotkey]
+    ).value
     emission = subtensor.query_subtensor(
         "PendingdHotkeyEmission", block, params=[hotkey]
     ).value
+
+    emission_to_distribute = emission - untouchable_emission
 
     # It is important to get the stake at the start of the interval, and not at the end of it.
     start_block = block - BLOCK_INTERVAL
@@ -27,7 +32,7 @@ def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
         "PendingdHotkeyEmission", start_block, params=[hotkey]
     ).value
 
-    emission_before_take = emission - emission_start_block
+    emission_before_take = emission_to_distribute - emission_start_block
 
     last_drain_block = int(
         subtensor.query_subtensor(
@@ -42,7 +47,9 @@ def get_hotkey_data(subtensor: bittensor.Subtensor, hotkey: str, block: int):
             "PendingdHotkeyEmission", block_before_drain, params=[hotkey]
         ).value
 
-        emission_before_take = emission_before_drain - emission_start_block + emission
+        emission_before_take = (
+            emission_before_drain - emission_start_block + emission_to_distribute
+        )
 
     # We're getting rid of everything after the decimal point.
     emission_after_take = int(emission_before_take * (1 - take))
