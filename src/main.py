@@ -16,7 +16,11 @@ subtensor = bittensor.Subtensor(node)
 
 current_block = subtensor.get_current_block()
 
-blocks = get_blocks_to_fetch(current_block, blocks_to_fetch_count)
+blocks = (
+    [current_block]
+    if blocks_to_fetch_count == 1
+    else get_blocks_to_fetch(current_block, blocks_to_fetch_count)
+)
 
 yield_sum = 0
 emission_sum = 0
@@ -54,7 +58,9 @@ with Progress(
 
             task = progress.add_task("[cyan]Fetching emissions", total=len(blocks))
 
-        data = get_hotkey_data(subtensor, hotkey, block)
+        data = get_hotkey_data(
+            subtensor, hotkey, block, True if blocks_count == 1 else False
+        )
         if data is not None:
             hotkey_yield, hotkey_emission = data
             yield_sum += hotkey_yield

@@ -29,7 +29,7 @@ You can pass additional environment variables to the container to customize the 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | PERIOD   | The period to calculate the APY for. Options: `1h`, `24h`, `7d`, or `30d`. Longer periods take more time to calculate. Estimated durations: `1h` ~10s, `24h` ~1min, `7d` ~10min, `30d` ~45min. Using your own archive node will significantly speed up the process. | `24h` |
-| HOTKEY   | The hotkey of the validator to calculate the APY for. | Owl Ventures Hotkey |
+| HOTKEY   | The hotkey of the validator to calculate the APY for. | tao5 Hotkey |
 | NODE     | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
 
 Example with custom parameters:
