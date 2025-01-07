@@ -45,7 +45,7 @@ with Progress(
 
         if blocks_count == 1:
             task_subnets = progress.add_task("[cyan]Fetching subnets", total=1)
-            netuids = subtensor.get_subnets(block)
+            netuids = [netuid for netuid in subtensor.get_subnets(block) if netuid != 0]
 
             progress.advance(task_subnets)
 

@@ -3,6 +3,44 @@ from bittensor.utils import u64_normalized_float, u16_normalized_float
 from rich.progress import Progress, TaskID
 
 
+def get_stake_for_hotkey_on_subnet(
+    subtensor: bittensor.Subtensor, hotkey: str, netuid: int, block: int
+):
+    initial_stake = subtensor.query_subtensor(
+        "TotalHotkeyStake", block, params=[hotkey]
+    ).value
+    stake_to_children = 0
+    stake_from_parents = 0
+
+    parents = subtensor.query_subtensor("ParentKeys", block, params=[hotkey, netuid])
+    children = subtensor.query_subtensor("ChildKeys", block, params=[hotkey, netuid])
+
+    for raw_proportion, _ in children:
+        proportion = u64_normalized_float(str(raw_proportion))
+
+        stake_proportion_to_child = initial_stake * proportion
+        stake_to_children += stake_proportion_to_child
+
+    for raw_proportion, raw_parent_hotkey in parents:
+        proportion = u64_normalized_float(str(raw_proportion))
+        parent_hotkey = str(raw_parent_hotkey)
+
+        parent_stake = subtensor.query_subtensor(
+            "TotalHotkeyStake", block, params=[parent_hotkey]
+        ).value
+
+        stake_proportion_from_parent = parent_stake * proportion
+        stake_from_parents += stake_proportion_from_parent
+
+    finalized_stake = initial_stake - stake_to_children + stake_from_parents
+
+    max_stake = subtensor.query_subtensor(
+        "NetworkMaxStake", block, params=[netuid]
+    ).value
+
+    return min(finalized_stake, max_stake)
+
+
 def get_parent_keys_dividends(
     subtensor: bittensor.Subtensor,
     hotkey: str,
@@ -16,9 +54,9 @@ def get_parent_keys_dividends(
         subtensor.query_subtensor("ChildkeyTake", block, params=[hotkey, netuid]).value
     )
 
-    total_hotkey_stake = subtensor.query_subtensor(
-        "TotalHotkeyStake", block, params=[hotkey]
-    ).value
+    total_hotkey_stake = get_stake_for_hotkey_on_subnet(
+        subtensor, hotkey, netuid, block
+    )
 
     if total_hotkey_stake == 0:
         return total_dividends
@@ -74,9 +112,9 @@ def get_child_keys_dividends_and_fees(
         if child_hotkey_index is None:
             continue
 
-        total_child_stake = subtensor.query_subtensor(
-            "TotalHotkeyStake", block, params=[child_hotkey]
-        ).value
+        total_child_stake = get_stake_for_hotkey_on_subnet(
+            subtensor, child_hotkey, netuid, block
+        )
         if total_child_stake == 0:
             continue
 
