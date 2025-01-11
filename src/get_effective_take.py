@@ -3,6 +3,30 @@ from bittensor.utils import u64_normalized_float, u16_normalized_float
 from rich.progress import Progress, TaskID
 
 
+def get_validating_emission(
+    subtensor: bittensor.Subtensor, hotkey_uid: int, netuid: int, block: int
+):
+    emission = subtensor.query_subtensor("Emission", block, [netuid])
+    dividends = subtensor.query_subtensor("Dividends", block, [netuid])
+    incentives = subtensor.query_subtensor("Incentive", block, [netuid])
+
+    emission_sum = sum(e.value for e in emission)
+
+    dividends_incentives_sum = sum(d.value for d in dividends) + sum(
+        i.value for i in incentives
+    )
+
+    dividend = dividends[hotkey_uid].value / dividends_incentives_sum
+
+    validating_emission = dividend * emission_sum
+
+    tempo = subtensor.get_subnet_hyperparameters(netuid, block).tempo
+
+    adjusted_validating_emission = (validating_emission / tempo) * 360
+
+    return adjusted_validating_emission
+
+
 def get_stake_for_hotkey_on_subnet(
     subtensor: bittensor.Subtensor, hotkey: str, netuid: int, block: int
 ):
@@ -41,25 +65,21 @@ def get_stake_for_hotkey_on_subnet(
     return min(finalized_stake, max_stake)
 
 
-def get_parent_keys_dividends(
+def get_parent_keys_validating_emission(
     subtensor: bittensor.Subtensor,
     hotkey: str,
     netuid: int,
-    dividends: float,
+    validating_emission: float,
     block: int,
 ):
-    total_dividends = 0
-
-    child_key_take = u16_normalized_float(
-        subtensor.query_subtensor("ChildkeyTake", block, params=[hotkey, netuid]).value
-    )
+    total_validating_emission = 0
 
     total_hotkey_stake = get_stake_for_hotkey_on_subnet(
         subtensor, hotkey, netuid, block
     )
 
     if total_hotkey_stake == 0:
-        return total_dividends
+        return total_validating_emission
 
     parent_keys = subtensor.query_subtensor(
         "ParentKeys", block, params=[hotkey, netuid]
@@ -75,25 +95,20 @@ def get_parent_keys_dividends(
         stake_from_parent = parent_stake * proportion
         proportion_from_parent = stake_from_parent / total_hotkey_stake
 
-        parent_dividends = proportion_from_parent * dividends
+        parent_validating_emission = proportion_from_parent * validating_emission
 
-        child_dividends_take = child_key_take * parent_dividends
+        total_validating_emission += parent_validating_emission
 
-        parent_dividends_take = parent_dividends - child_dividends_take
-
-        total_dividends += parent_dividends_take
-
-    return total_dividends
+    return total_validating_emission
 
 
-def get_child_keys_dividends_and_fees(
+def get_child_keys_validating_emission_and_fees(
     subtensor: bittensor.Subtensor,
     hotkey: str,
-    metagraph: bittensor.Subtensor.metagraph,
     netuid: int,
     block: int,
 ):
-    total_dividends = 0
+    total_validating_emission = 0
     fees = 0
 
     parent_stake = subtensor.query_subtensor(
@@ -104,12 +119,11 @@ def get_child_keys_dividends_and_fees(
         proportion = u64_normalized_float(str(raw_proportion))
         child_hotkey = str(raw_child_hotkey)
 
-        try:
-            child_hotkey_index = metagraph.hotkeys.index(child_hotkey)
-        except ValueError:
-            child_hotkey_index = None
+        child_hotkey_uid = subtensor.get_uid_for_hotkey_on_subnet(
+            child_hotkey, netuid, block
+        )
 
-        if child_hotkey_index is None:
+        if child_hotkey_uid is None:
             continue
 
         total_child_stake = get_stake_for_hotkey_on_subnet(
@@ -121,11 +135,15 @@ def get_child_keys_dividends_and_fees(
         stake_from_parent = parent_stake * proportion
         proportion_from_parent = stake_from_parent / total_child_stake
 
-        # ---- Dividends ----
-        child_dividends = metagraph.dividends[child_hotkey_index]
+        # ---- Validating Emission ----
+        child_validating_emission = get_validating_emission(
+            subtensor, child_hotkey_uid, netuid, block
+        )
 
-        child_dividends_take = proportion_from_parent * child_dividends
-        total_dividends += child_dividends_take
+        child_validating_emission_take = (
+            proportion_from_parent * child_validating_emission
+        )
+        total_validating_emission += child_validating_emission_take
 
         # ---- Fees ----
         child_key_take = u16_normalized_float(
@@ -134,10 +152,10 @@ def get_child_keys_dividends_and_fees(
             ).value
         )
 
-        fee = proportion_from_parent * child_dividends * child_key_take
+        fee = proportion_from_parent * child_validating_emission * child_key_take
         fees += fee
 
-    return total_dividends, fees
+    return total_validating_emission, fees
 
 
 def get_effective_take(
@@ -148,9 +166,9 @@ def get_effective_take(
     progress: Progress,
     task: TaskID,
 ):
-    total_dividends = 0
-    total_parent_keys_dividends = 0
-    total_child_keys_dividends = 0
+    total_validating_emission = 0
+    total_parent_keys_validating_emission = 0
+    total_child_keys_validating_emission = 0
     total_child_keys_fees = 0
 
     take = u16_normalized_float(
@@ -158,30 +176,33 @@ def get_effective_take(
     )
 
     for netuid in netuids:
-        metagraph = subtensor.metagraph(netuid, block)
+        hotkey_uid = subtensor.get_uid_for_hotkey_on_subnet(hotkey, netuid, block)
 
-        hotkey_to_index = {key: idx for idx, key in enumerate(metagraph.hotkeys)}
-
-        if hotkey in hotkey_to_index:
-            hotkey_index = hotkey_to_index[hotkey]
-            dividends = metagraph.dividends[hotkey_index]
-            total_dividends += dividends
-
-            parent_keys_dividends = get_parent_keys_dividends(
-                subtensor, hotkey, netuid, dividends, block
+        if hotkey_uid:
+            validating_emission = get_validating_emission(
+                subtensor, hotkey_uid, netuid, block
             )
-            total_parent_keys_dividends += parent_keys_dividends
+            total_validating_emission += validating_emission
 
-        child_keys_dividends, child_keys_fees = get_child_keys_dividends_and_fees(
-            subtensor, hotkey, metagraph, netuid, block
+            parent_keys_validating_emission = get_parent_keys_validating_emission(
+                subtensor, hotkey, netuid, validating_emission, block
+            )
+            total_parent_keys_validating_emission += parent_keys_validating_emission
+
+        child_keys_validating_emission, child_keys_fees = (
+            get_child_keys_validating_emission_and_fees(
+                subtensor, hotkey, netuid, block
+            )
         )
-        total_child_keys_dividends += child_keys_dividends
+        total_child_keys_validating_emission += child_keys_validating_emission
         total_child_keys_fees += child_keys_fees
 
         progress.advance(task)
 
     denominator = (
-        total_dividends - total_parent_keys_dividends + total_child_keys_dividends
+        total_validating_emission
+        - total_parent_keys_validating_emission
+        + total_child_keys_validating_emission
     )
     if denominator == 0:
         effective_take = 0
@@ -189,9 +210,9 @@ def get_effective_take(
         effective_take = (
             take
             * (
-                total_dividends
-                - total_parent_keys_dividends
-                + total_child_keys_dividends
+                total_validating_emission
+                - total_parent_keys_validating_emission
+                + total_child_keys_validating_emission
                 - total_child_keys_fees
             )
             + total_child_keys_fees
