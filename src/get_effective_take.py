@@ -16,7 +16,12 @@ def get_validating_emission(
         i.value for i in incentives
     )
 
-    dividend = dividends[hotkey_uid].value / dividends_incentives_sum
+    hotkey_dividend = dividends[hotkey_uid].value
+
+    if emission_sum == 0 or dividends_incentives_sum == 0 or hotkey_dividend == 0:
+        return 0
+
+    dividend = hotkey_dividend / dividends_incentives_sum
 
     validating_emission = dividend * emission_sum
 
