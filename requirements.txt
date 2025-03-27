@@ -1,2 +1,2 @@
-bittensor == 8.4.5
+bittensor==9.0.0
 rich == 13.9.2

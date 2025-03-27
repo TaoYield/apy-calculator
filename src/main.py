@@ -1,93 +1,81 @@
+import sys
 import bittensor
-
 from rich.progress import Progress, TimeElapsedColumn, SpinnerColumn
 from rich.panel import Panel
 
-from constants import DIVIDERS
-from get_hotkey_data import get_hotkey_data
-from get_effective_take import get_effective_take
-from get_blocks_to_fetch import get_blocks_to_fetch
-from utils.env import parse_env_data
 from utils.print import print_results
-
-[node, hotkey, blocks_to_fetch_count] = parse_env_data()
-
-subtensor = bittensor.Subtensor(node)
-
-current_block = subtensor.get_current_block()
-
-blocks = (
-    [current_block]
-    if blocks_to_fetch_count == 1
-    else get_blocks_to_fetch(current_block, blocks_to_fetch_count)
+from utils.env import parse_env_data
+from calc import (
+    calculate_hotkey_subnet_apy,
+    calculate_hotkey_root_apy,
 )
+from constants import INTERVAL_SECONDS
 
-yield_sum = 0
-emission_sum = 0
-blocks_count = 0
-invalid_blocks = 0
+VALID_INTERVALS = set(INTERVAL_SECONDS.keys())
 
-results = []
-effective_take = None
+def parse_args():
+    """Parse and validate command line arguments."""
+    if len(sys.argv) < 4:
+        print("Usage: python main.py <netuid> <hotkey> <interval> [block]")
+        print("  <netuid> - netuid index (0 is root)")
+        print("  <hotkey> - delegate hotkey in ss58 format")
+        print("  <interval> - one of: " + ", ".join(f'"{x}"' for x in VALID_INTERVALS))
+        print("  [block] - optional block number to calculate APY from")
+        print("Example: python main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h")
+        sys.exit(1)
 
-with Progress(
-    SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn()
-) as progress:
-    progress.console.print(
-        Panel(f"Hotkey: [b][i][magenta]{hotkey}[/magenta][/i][/b]", width=60)
-    )
+    try:
+        netuid = int(sys.argv[1])
+        hotkey = sys.argv[2]
+        interval = sys.argv[3]
+        block = None if len(sys.argv) <= 4 else int(sys.argv[4])
 
-    for block in blocks:
-        blocks_count += 1
+        if interval not in VALID_INTERVALS:
+            print(f"Error: Invalid interval '{interval}'. Must be one of: {', '.join(VALID_INTERVALS)}")
+            sys.exit(1)
+
+        return netuid, hotkey, interval, block
+    except ValueError as e:
+        print(f"Error: Invalid argument format - {str(e)}")
+        sys.exit(1)
+
+def main():
+    # Parse command line arguments
+    netuid, hotkey, interval, block = parse_args()
+
+    # Get node URL from environment
+    [node_url] = parse_env_data()
+    subtensor = bittensor.Subtensor(node_url)
+    
+    if block is None:
+        block = subtensor.block
+
+    with Progress(
+        SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn()
+    ) as progress:
         progress.console.print(
-            f"Processing block [blue]{block}[/blue] [{blocks_count}/{len(blocks)}]"
+            Panel(f"Hotkey: [b][i][magenta]{hotkey}[/magenta][/i][/b]", width=60)
         )
 
-        if blocks_count == 1:
-            task_subnets = progress.add_task("[cyan]Fetching subnets", total=1)
-            netuids = [netuid for netuid in subtensor.get_subnets(block) if netuid != 0]
+        try:
+            if netuid > 0:
+                # Calculate subnet APY
+                progress.console.print(f"\nCalculating APY for subnet {netuid}")
+                task = progress.add_task(f"[cyan]Processing subnet {netuid}", total=100)
+                apy, divs = calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, task)
+                results = [[apy, divs]]
+            else:
+                # Calculate root network APY
+                progress.console.print("\nCalculating root network APY")
+                task = progress.add_task("[cyan]Processing root network", total=100)
+                apy, divs = calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, task)
+                results = [[apy, divs]]
+                
+        except Exception as e:
+            progress.console.print(f"Error calculating APY: {str(e)}")
+            sys.exit(1)
+    
+    print_results(results, None)
 
-            progress.advance(task_subnets)
-
-            task_take = progress.add_task(
-                "[cyan]Calculating effective take rate", total=len(netuids)
-            )
-            effective_take = get_effective_take(
-                subtensor, hotkey, netuids, block, progress, task_take
-            )
-
-            task = progress.add_task("[cyan]Fetching emissions", total=len(blocks))
-
-        data = get_hotkey_data(
-            subtensor, hotkey, block, True if blocks_count == 1 else False
-        )
-        if data is not None:
-            hotkey_yield, hotkey_emission = data
-            yield_sum += hotkey_yield
-            emission_sum += hotkey_emission
-        else:
-            invalid_blocks += 1
-            progress.console.print("\tNo data found for the hotkey in this block")
-
-        progress.advance(task)
-
-        # Check if we've reached the required block count. If so, calculate APY for the given period.
-        for number_of_blocks_required_for_period, divider in list(DIVIDERS.items()):
-            if blocks_count == number_of_blocks_required_for_period:
-                # If a given validator wasn't active for at least 80% of the block intervals in a given period, we skip the calculations for that period.
-                valid_blocks = blocks_count - invalid_blocks
-                if valid_blocks / number_of_blocks_required_for_period < 0.8:
-                    results.append([None, None])
-                    continue
-
-                daily_yield = yield_sum / divider
-
-                # Compounding occurs once per day, thus 365 days in a year.
-                compounding_periods = 365
-                apy = ((1 + daily_yield) ** compounding_periods - 1) * 100
-
-                results.append([apy, emission_sum])
-
-                break
-
-print_results(results, effective_take)
+if __name__ == "__main__":
+    main()

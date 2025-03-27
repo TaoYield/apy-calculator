@@ -15,26 +15,31 @@ After running the script, you can compare the results with the [TaoYield](https:
 ### Steps
 
 1. Build the Docker image:
+
 ```bash
 docker build -t tao-yield-calculator .
 ```
 
 2. Run the Docker container:
+
 ```bash
-docker run -t tao-yield-calculator
+# For subnet validator APY calculation (netuid > 0)
+docker run tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+
+# For root network validator APY calculation (netuid = 0)
+docker run tao-yield-calculator 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 You can pass additional environment variables to the container to customize the script's behavior:
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| PERIOD   | The period to calculate the APY for. Options: `1h`, `24h`, `7d`, or `30d`. Longer periods take more time to calculate. Estimated durations: `1h` ~10s, `24h` ~1min, `7d` ~10min, `30d` ~45min. Using your own archive node will significantly speed up the process. | `24h` |
-| HOTKEY   | The hotkey of the validator to calculate the APY for. | tao5 Hotkey |
-| NODE     | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
+| NODE | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
 
 Example with custom parameters:
+
 ```bash
-docker run -e PERIOD="24h" -e HOTKEY="5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp" -e NODE="wss://archive.chain.opentensor.ai:443" -t tao-yield-calculator
+docker run -e NODE_URL="wss://archive.chain.opentensor.ai:443" tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 ## Running the script without Docker
@@ -46,26 +51,73 @@ docker run -e PERIOD="24h" -e HOTKEY="5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p
 ### Steps
 
 1. Create a virtual environment:
+
 ```bash
 python -m venv venv
 ```
 
 2. Activate the virtual environment:
+
 ```bash
 source venv/bin/activate
 ```
 
 3. Install the required packages:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 4. Run the script:
+
 ```bash
-python src/main.py
+# For subnet validator APY calculation (netuid > 0)
+python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+
+# For root network validator APY calculation (netuid = 0)
+python src/main.py 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
-You can set the same environment variables as in the Docker to customize the script's behavior, e.g.:
+You can set environment variables to customize the script's behavior, e.g.:
+
 ```bash
-PERIOD="24h" HOTKEY="5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp" NODE="wss://archive.chain.opentensor.ai:443" python src/main.py
+NODE="wss://archive.chain.opentensor.ai:443" python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
+
+## Command Line Interface
+
+The tool accepts the following command-line arguments:
+
+```bash
+python src/main.py <netuid> <hotkey> <interval> [block]
+
+Arguments:
+  <netuid>   - netuid index (0 is root network, >0 for subnet)
+  <hotkey>   - validator hotkey in ss58 format
+  <interval> - one of: "1d", "7d", "30d", "90d", "1y"
+  [block]    - optional block number to calculate APY from
+```
+
+Example:
+
+```bash
+python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+```
+
+## Implementation Details
+
+The calculator uses the following approach for validator APY calculations:
+
+1. For subnet validators (netuid > 0):
+   - Calculates APY based on stake and rewards over the specified time interval
+   - Takes into account the validator's tempo and block intervals
+   - Considers subnet-specific parameters and rewards
+
+2. For root network validators (netuid = 0):
+   - Calculates APY based on stake and rewards over the specified time interval
+   - Takes into account the validator's tempo and block intervals
+   - Considers root network-specific parameters and rewards
+
+## License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
