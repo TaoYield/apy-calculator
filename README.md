@@ -39,7 +39,7 @@ You can pass additional environment variables to the container to customize the 
 Example with custom parameters:
 
 ```bash
-docker run -e NODE_URL="wss://archive.chain.opentensor.ai:443" tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+docker run -e NODE="wss://archive.chain.opentensor.ai:443" tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 ## Running the script without Docker
