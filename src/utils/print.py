@@ -17,7 +17,7 @@ def format_float(value: float, decimals: int, floor: bool = True) -> str:
     return f"{value:.{decimals}f}"
 
 
-def print_results(results: list[list[float | None, float | None]], effective_take: float | None):
+def print_results(results: list[list[float | None, float | None]], netuid: int, hotkey: str):
     if not results or not results[0]:
         console = Console()
         console.print("[i]No data found for this hotkey...[/i]")
@@ -28,6 +28,9 @@ def print_results(results: list[list[float | None, float | None]], effective_tak
     table = Table(caption_style="white i")
     table.add_column("Metric", justify="right", style="blue")
     table.add_column("Value", justify="right", style="magenta")
+
+    # Format subnet
+    subnet = "Root Network" if netuid == 0 else f"Subnet {netuid}"
 
     # Format APY
     formatted_apy = (
@@ -47,6 +50,8 @@ def print_results(results: list[list[float | None, float | None]], effective_tak
         )
     )
 
+    table.add_row("Subnet", subnet)
+    table.add_row("Hotkey", hotkey)
     table.add_row("APY", formatted_apy)
     table.add_row("Dividends", formatted_divs)
 

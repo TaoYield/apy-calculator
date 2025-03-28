@@ -75,7 +75,7 @@ def main():
             progress.console.print(f"Error calculating APY: {str(e)}")
             sys.exit(1)
     
-    print_results(results, None)
+    print_results(results, netuid, hotkey)
 
 if __name__ == "__main__":
     main()
