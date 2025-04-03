@@ -5,10 +5,7 @@ from rich.panel import Panel
 
 from utils.print import print_results
 from utils.env import parse_env_data
-from calc import (
-    calculate_hotkey_subnet_apy,
-    calculate_hotkey_root_apy,
-)
+from calc import calculate_hotkey_subnet_apy, calculate_hotkey_root_apy
 from constants import INTERVAL_SECONDS
 
 VALID_INTERVALS = set(INTERVAL_SECONDS.keys())
