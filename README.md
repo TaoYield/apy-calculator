@@ -24,10 +24,10 @@ docker build -t tao-yield-calculator .
 
 ```bash
 # For subnet validator APY calculation (netuid > 0)
-docker run tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+docker run -t tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 
 # For root network validator APY calculation (netuid = 0)
-docker run tao-yield-calculator 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+docker run -t tao-yield-calculator 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 You can pass additional environment variables to the container to customize the script's behavior:
@@ -35,13 +35,13 @@ You can pass additional environment variables to the container to customize the 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | NODE | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
-| BATCH_SIZE | The batch size of tasks to run asynchronously. | 100 |
+| BATCH_SIZE | The batch size of tasks to run asynchronously. Be careful when using docker. | 100 |
 
 
 Example with custom parameters:
 
 ```bash
-docker run -e NODE_URL="wss://archive.chain.opentensor.ai:443" tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+docker run -t -e NODE_URL="wss://archive.chain.opentensor.ai:443" tao-yield-calculator 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 ## Running the script without Docker
