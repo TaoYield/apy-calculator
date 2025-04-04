@@ -1,12 +1,14 @@
 import sys
-import bittensor
+import asyncio
 from rich.progress import Progress, TimeElapsedColumn, SpinnerColumn
 from rich.panel import Panel
 
 from utils.print import print_results
 from utils.env import parse_env_data
-from calc import calculate_hotkey_subnet_apy, calculate_hotkey_root_apy
 from constants import INTERVAL_SECONDS
+from subnet_calc import calculate_hotkey_subnet_apy
+from root_calc import calculate_hotkey_root_apy
+from bittensor import AsyncSubtensor
 
 VALID_INTERVALS = set(INTERVAL_SECONDS.keys())
 
@@ -36,43 +38,44 @@ def parse_args():
         print(f"Error: Invalid argument format - {str(e)}")
         sys.exit(1)
 
-def main():
+async def main():
     # Parse command line arguments
     netuid, hotkey, interval, block = parse_args()
 
     # Get node URL from environment
-    [node_url] = parse_env_data()
-    subtensor = bittensor.Subtensor(node_url)
+    [node_url, batch_size] = parse_env_data()
+
+    async with AsyncSubtensor(node_url) as subtensor:
+        if block is None:
+            block = await subtensor.block
+
+        with Progress(
+            SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn()
+        ) as progress:
+            if batch_size > 100:
+                progress.console.print(f"\n[yellow]WARNING: Batch size: {batch_size}, this may cause event loop to be hanging. [/yellow]")
+            progress.console.print(
+                Panel(f"Hotkey: [b][i][magenta]{hotkey}[/magenta][/i][/b]", width=60)
+            )
+
+            try:
+                if netuid > 0:
+                    # Calculate subnet APY
+                    progress.console.print(f"\nCalculating APY for subnet {netuid}")
+                    apy, divs = await calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size)
+                    results = [[apy, divs]]
+                else:
+                    # Calculate root network APY
+                    progress.console.print("\nCalculating root network APY")
+                    apy, divs = await calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size)
+                    results = [[apy, divs]]
+                    
+            except Exception as e:
+                progress.console.print(f"Error calculating APY: {str(e)}")
+                sys.exit(1)
     
-    if block is None:
-        block = subtensor.block
+        print_results(results, netuid, hotkey)
 
-    with Progress(
-        SpinnerColumn(), *Progress.get_default_columns(), TimeElapsedColumn()
-    ) as progress:
-        progress.console.print(
-            Panel(f"Hotkey: [b][i][magenta]{hotkey}[/magenta][/i][/b]", width=60)
-        )
-
-        try:
-            if netuid > 0:
-                # Calculate subnet APY
-                progress.console.print(f"\nCalculating APY for subnet {netuid}")
-                task = progress.add_task(f"[cyan]Processing subnet {netuid}", total=100)
-                apy, divs = calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, task)
-                results = [[apy, divs]]
-            else:
-                # Calculate root network APY
-                progress.console.print("\nCalculating root network APY")
-                task = progress.add_task("[cyan]Processing root network", total=100)
-                apy, divs = calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, task)
-                results = [[apy, divs]]
-                
-        except Exception as e:
-            progress.console.print(f"Error calculating APY: {str(e)}")
-            sys.exit(1)
-    
-    print_results(results, netuid, hotkey)
-
+# Run the main function
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

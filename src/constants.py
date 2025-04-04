@@ -10,3 +10,5 @@ INTERVAL_SECONDS = {
     "30d": 60 * 60 * 24 * 30,
     "year": 60 * 60 * 24 * 365,
 }
+
+REQUIRED_BLOCKS_RATIO = 0.9

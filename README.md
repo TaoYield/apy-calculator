@@ -35,6 +35,8 @@ You can pass additional environment variables to the container to customize the 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | NODE | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
+| BATCH_SIZE | The batch size of tasks to run asynchronously. | 100 |
+
 
 Example with custom parameters:
 
@@ -72,16 +74,16 @@ pip install -r requirements.txt
 
 ```bash
 # For subnet validator APY calculation (netuid > 0)
-python -m src.main 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 
 # For root network validator APY calculation (netuid = 0)
-python -m src.main 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+python src/main.py 0 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 You can set environment variables to customize the script's behavior, e.g.:
 
 ```bash
-NODE="wss://archive.chain.opentensor.ai:443" python -m src.main 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+NODE="wss://archive.chain.opentensor.ai:443" python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 ## Command Line Interface
@@ -89,7 +91,7 @@ NODE="wss://archive.chain.opentensor.ai:443" python -m src.main 37 5CsvRJXuR955W
 The tool accepts the following command-line arguments:
 
 ```bash
-python -m src.main <netuid> <hotkey> <interval> [block]
+python src/main.py <netuid> <hotkey> <interval> [block]
 
 Arguments:
   <netuid>   - netuid index (0 is root network, >0 for subnet)
@@ -101,7 +103,7 @@ Arguments:
 Example:
 
 ```bash
-python -m src.main 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
+python src/main.py 37 5CsvRJXuR955WojnGMdok1hbhffZyB4N5ocrv82f3p5A2zVp 24h
 ```
 
 ## Implementation Details
