@@ -4,7 +4,7 @@ from rich.console import Console
 from rich.table import Table
 
 
-def format_float(value: float, decimals: int = 2, floor: bool = True) -> str:
+def format_float(value: float, decimals: int, floor: bool = True) -> str:
     """
     Formats a float value with specified number of decimal places.
     Args:
@@ -13,51 +13,48 @@ def format_float(value: float, decimals: int = 2, floor: bool = True) -> str:
         floor: If True, uses math.floor for rounding, otherwise uses regular rounding (default: True)
     """
     if floor:
-        return f"{math.floor(value * (10 ** decimals)) / (10 ** decimals):.{decimals}f}"
-    return f"{round(value, decimals):.{decimals}f}"
+        return f"{value:.{decimals}f}"
+    return f"{value:.{decimals}f}"
 
 
-def print_results(results: list[float | None, float | None], effective_take: float):
+def print_results(results: list[list[float | None, float | None]], netuid: int, hotkey: str):
+    if not results or not results[0]:
+        console = Console()
+        console.print("[i]No data found for this hotkey...[/i]")
+        return
+
+    [apy, divs] = results[0]
+    
     table = Table(caption_style="white i")
+    table.add_column("Metric", justify="right", style="blue")
+    table.add_column("Value", justify="right", style="magenta")
 
-    table.add_column("Period", justify="right", style="blue")
-    table.add_column("APY", justify="center", style="magenta")
-    table.add_column("Yield", justify="right", style="green")
+    # Format subnet
+    subnet = "Root Network" if netuid == 0 else f"Subnet {netuid}"
 
-    periods = ["1 hour", "24 hours", "7 days", "30 days"]
+    # Format APY
+    formatted_apy = (
+        "N/A"
+        if apy is None
+        else (f"{format_float(apy, 2)}%" if apy >= 0.01 else "<0.01%")
+    )
 
-    for i in range(len(results)):
-        [apy, emission] = results[i]
-
-        formatted_apy = (
-            "N/A"
-            if apy == None
-            else (f"{format_float(apy, 2)}%" if apy >= 0.01 else "<0.01%")
+    # Format dividends
+    formatted_divs = (
+        "N/A"
+        if divs is None
+        else (
+            f"{format_float(divs / 1e9, 6)}𝞃"
+            if divs / 1e9 >= 0.000001
+            else "<0.000001𝞃"
         )
+    )
 
-        formatted_period_emission = (
-            "N/A"
-            if emission == None
-            else (
-                f"{format_float(emission / 1e9)}𝞃"
-                if emission / 1e9 >= 0.01
-                else "<0.01𝞃"
-            )
-        )
-
-        table.add_row(
-            periods[i],
-            formatted_apy,
-            formatted_period_emission,
-        )
-
-    table.caption = f"Effective Take Rate: [yellow]{format_float(effective_take * 100, 1, floor=False)}%[/yellow]"
+    table.add_row("Subnet", subnet)
+    table.add_row("Hotkey", hotkey)
+    table.add_row("APY", formatted_apy)
+    table.add_row("Dividends", formatted_divs)
 
     console = Console()
-
     console.print("\n")
-
-    if len(results) > 0:
-        console.print(table)
-    else:
-        console.print("[i]No emissions found for this hotkey...[/i]")
+    console.print(table)
