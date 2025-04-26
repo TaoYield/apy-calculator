@@ -131,7 +131,7 @@ async def calculate_hotkey_root_apy(
         yield_product *= (1 + epoch_yield)
 
     if skipped > 0:
-        progress.console.print(f"[yellow]Skipped {skipped} events due to query failures or zero stake.[/yellow]")
+        progress.console.print(f"[yellow]Skipped {skipped} events due to query failures or applied filters.[/yellow]")
         if len(events) - skipped < REQUIRED_BLOCKS_RATIO * len(events):
             progress.console.print(f"[yellow]Coverage is less than: {REQUIRED_BLOCKS_RATIO * 100:.6f}% can lead to inaccurate results.[/yellow]")
 
