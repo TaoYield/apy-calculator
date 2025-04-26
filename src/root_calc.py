@@ -117,7 +117,8 @@ async def calculate_hotkey_root_apy(
 
         # Such cases mean that the query failed or zero stake,
         # which leads to division by zero in the yield calculation.
-        if root_div == -1 or stake == -1 or stake == 0:
+        # also here we filter validators with stake less than 4k TAO.
+        if root_div == -1 or stake == -1 or stake < 4000:
             skipped += 1
             continue
 

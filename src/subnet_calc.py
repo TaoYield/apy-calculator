@@ -3,6 +3,8 @@ from typing import Tuple, List, Dict
 from constants import BLOCK_SECONDS, INTERVAL_SECONDS, REQUIRED_BLOCKS_RATIO
 from bittensor import Balance, AsyncSubtensor
 from apy import calculate_interval_blocks, calculate_apy
+from filter import has_enough_stake
+from helpers import calc_inherited_on_subnet, get_children, get_divs_for_hotkey_on_subnet, get_parents, get_stake_for_hotkey_on_subnet, get_tao_weight
 
 async def calculate_hotkey_subnet_apy(
     subtensor: AsyncSubtensor,
@@ -11,7 +13,8 @@ async def calculate_hotkey_subnet_apy(
     interval: str,
     block: int,
     progress,
-    batch_size: int = 100
+    batch_size: int = 100,
+    use_inherited_filer: bool = False,
 ) -> Tuple[float, int]:
     """
     Asynchronously calculate the Annual Percentage Yield (APY) for a hotkey based on subnet dividends.
@@ -51,71 +54,79 @@ async def calculate_hotkey_subnet_apy(
         epoch -= period
 
     # Create divs task
-    divsTask = progress.add_task(f"[cyan]Fetching divs for {hotkey}", total=len(events))
+    data_task = progress.add_task(f"[cyan]Fetching data for {hotkey}", total=len(events))
 
-    # Create divs query
-    async def query_divs_with_progress(block: int, params: List) -> int:
-        result = await subtensor.query_subtensor("AlphaDividendsPerSubnet", block=block, params=params)
-        progress.update(divsTask, advance=1)
-        return result.value
+    # Create blockchain query
+    async def query_data_with_progress(block: int, hotkey: str, netuid: int) -> dict:
+        # Main part
+        tao_weight = await get_tao_weight(subtensor, block)
+        subnet_stake = await get_stake_for_hotkey_on_subnet(subtensor, hotkey, netuid, block)
+        root_stake = await get_stake_for_hotkey_on_subnet(subtensor, hotkey, 0, block)
+        subnet_div = await get_divs_for_hotkey_on_subnet(subtensor, hotkey, netuid, block)
+        
+        # Inherited part
+        inh_root_stake = 0
+        inh_subnet_stake = 0
+        if use_inherited_filer:
+            parents = await get_parents(subtensor, hotkey, netuid, block)
+            children = await get_children(subtensor, hotkey, netuid, block)
+            inh_root_stake = await calc_inherited_on_subnet(subtensor, root_stake, 0, parents, children, block)
+            inh_subnet_stake = await calc_inherited_on_subnet(subtensor, subnet_stake, netuid, parents, children, block)
+
+        progress.update(data_task, advance=1)
+
+        return {
+            "block": block,
+            "tao_weight": tao_weight,
+            "subnet_div": subnet_div,
+            "root_stake": root_stake,
+            "subnet_stake": subnet_stake,
+            "inh_root_stake": inh_root_stake,
+            "inh_subnet_stake": inh_subnet_stake,
+        }
     
-    # Prepare dividend tasks
-    root_div_tasks = [
-        lambda event=event: query_divs_with_progress(event["block"], [event["netuid"], hotkey])
+    # Prepare stake tasks
+    data_tasks = [
+        lambda event=event: query_data_with_progress(event["block"], hotkey, netuid)
         for event in events
     ]
 
-    # Fetch dividends in batches
-    divs: List[int] = []
-    for i in range(0, len(root_div_tasks), batch_size):
-        batch = root_div_tasks[i:i + batch_size]
+    # Fetch data in batches
+    results: List[int] = []
+    for i in range(0, len(data_tasks), batch_size):
+        batch = data_tasks[i:i + batch_size]
         batch_results = await asyncio.gather(*[task() for task in batch])
         batch_results = [result if not isinstance(result, Exception) else -1 for result in batch_results]
-        divs.extend(batch_results)
+        results.extend(batch_results)
 
-
-    # Create stake task
-    stakeTask = progress.add_task(f"[cyan]Fetching stakes for {hotkey}", total=len(events))
-
-    # Create stake query
-    async def query_stake_with_progress(block: int, params: List) -> int:
-        result = await subtensor.query_subtensor("TotalHotkeyAlpha", block=block, params=params)
-        progress.update(stakeTask, advance=1)
-        return result.value
     
-    # Prepare stake tasks
-    stake_tasks = [
-        lambda event=event: query_stake_with_progress(event["block"], [hotkey, netuid])
-        for event in events
-    ]   
-
-    # Fetch stakes in batches
-    stakes: List[int] = []
-    for i in range(0, len(stake_tasks), batch_size):
-        batch = stake_tasks[i:i + batch_size]
-        batch_results = await asyncio.gather(*[task() for task in batch])
-        batch_results = [result if not isinstance(result, Exception) else -1 for result in batch_results]
-        stakes.extend(batch_results)
-
     divs_sum = 0
     yield_product = 1
     skipped = 0
 
     for event_index, _ in enumerate(events, 0):
-        subnet_div = divs[event_index]
-        stake = stakes[event_index]
+        data = results[event_index]
+
+        # Such cases mean that the query failed.
+        if data == -1:
+            skipped += 1
+            continue
+
+        root_stake, subnet_stake = data["root_stake"], data["subnet_stake"]
+        inh_root_stake, inh_subnet_stake = data["inh_root_stake"], data["inh_subnet_stake"]
+        tao_weight = data["tao_weight"]
+        subnet_div = data["subnet_div"]
 
         # No dividends has no effect on the yield product
         if subnet_div == 0:
             continue
 
-        # Such cases mean that the query failed or zero stake,
-        # which leads to division by zero in the yield calculation.
-        if subnet_div == -1 or stake == -1 or stake == 0:
+        # Apply filter.
+        if not has_enough_stake(root_stake, subnet_stake, inh_root_stake, inh_subnet_stake, tao_weight):
             skipped += 1
             continue
 
-        epoch_yield = subnet_div/stake
+        epoch_yield = subnet_div/subnet_stake
         divs_sum += subnet_div
         yield_product *= (1+epoch_yield)
 
