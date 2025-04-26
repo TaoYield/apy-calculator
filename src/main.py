@@ -43,7 +43,7 @@ async def main():
     netuid, hotkey, interval, block = parse_args()
 
     # Get node URL from environment
-    [node_url, batch_size, use_inherited_filter] = parse_env_data()
+    [node_url, batch_size, use_inherited_filter, no_filters] = parse_env_data()
 
     async with AsyncSubtensor(node_url) as subtensor:
         if block is None:
@@ -64,12 +64,12 @@ async def main():
                 if netuid > 0:
                     # Calculate subnet APY
                     progress.console.print(f"\nCalculating APY for subnet {netuid}")
-                    apy, divs = await calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size, use_inherited_filter)
+                    apy, divs = await calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size, use_inherited_filter, no_filters)
                     results = [[apy, divs]]
                 else:
                     # Calculate root network APY
                     progress.console.print("\nCalculating root network APY")
-                    apy, divs = await calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size)
+                    apy, divs = await calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size, no_filters)
                     results = [[apy, divs]]
                     
             except Exception as e:

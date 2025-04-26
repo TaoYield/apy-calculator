@@ -15,6 +15,7 @@ async def calculate_hotkey_subnet_apy(
     progress,
     batch_size: int = 100,
     use_inherited_filer: bool = False,
+    no_filters: bool = False,
 ) -> Tuple[float, int]:
     """
     Asynchronously calculate the Annual Percentage Yield (APY) for a hotkey based on subnet dividends.
@@ -121,8 +122,13 @@ async def calculate_hotkey_subnet_apy(
         if subnet_div == 0:
             continue
 
+        # Zero stake is skipped (zero division)
+        if subnet_stake == 0:
+            skipped += 1
+            continue
+
         # Apply filter.
-        if not has_enough_stake(root_stake, subnet_stake, inh_root_stake, inh_subnet_stake, tao_weight):
+        if not no_filters and not has_enough_stake(root_stake, subnet_stake, inh_root_stake, inh_subnet_stake, tao_weight):
             skipped += 1
             continue
 
