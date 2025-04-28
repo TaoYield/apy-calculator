@@ -44,8 +44,8 @@ def print_results(results: list[list[float | None, float | None]], netuid: int, 
         "N/A"
         if divs is None
         else (
-            f"{format_float(divs / 1e9, 6)}𝞃"
-            if divs / 1e9 >= 0.000001
+            f"{format_float(divs, 6)}𝞃"
+            if divs >= 0.000001
             else "<0.000001𝞃"
         )
     )
