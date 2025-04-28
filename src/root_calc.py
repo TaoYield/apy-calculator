@@ -10,7 +10,8 @@ async def calculate_hotkey_root_apy(
     interval: str,
     block: int,
     progress,
-    batch_size: int = 100
+    batch_size: int = 100,
+    no_filters: bool = False,
 ) -> Tuple[float, int]:
     """
     Asynchronously calculate the Annual Percentage Yield (APY) for a hotkey based on root dividends.
@@ -115,9 +116,13 @@ async def calculate_hotkey_root_apy(
         if root_div == 0:
             continue
 
-        # Such cases mean that the query failed or zero stake,
-        # which leads to division by zero in the yield calculation.
+        # Such cases mean that the query failed or stake is zero (zero division).
         if root_div == -1 or stake == -1 or stake == 0:
+            skipped += 1
+            continue
+
+        # Here we filter validators with stake less than 4k TAO.
+        if not no_filters and stake < 4000:
             skipped += 1
             continue
 
@@ -126,7 +131,7 @@ async def calculate_hotkey_root_apy(
         yield_product *= (1 + epoch_yield)
 
     if skipped > 0:
-        progress.console.print(f"[yellow]Skipped {skipped} events due to query failures or zero stake.[/yellow]")
+        progress.console.print(f"[yellow]Skipped {skipped} events due to query failures or applied filters.[/yellow]")
         if len(events) - skipped < REQUIRED_BLOCKS_RATIO * len(events):
             progress.console.print(f"[yellow]Coverage is less than: {REQUIRED_BLOCKS_RATIO * 100:.6f}% can lead to inaccurate results.[/yellow]")
 

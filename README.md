@@ -36,7 +36,8 @@ You can pass additional environment variables to the container to customize the 
 |----------|-------------|---------|
 | NODE | The archive node to use to fetch the data from. | Opentensor Foundation Archive Node |
 | BATCH_SIZE | The batch size of tasks to run asynchronously. Be careful when using docker. | 100 |
-
+| INHERITED | The inherited flag defines if inherited have to be used. It needs more data to be retrieved. | False |
+| NO_FILTERS | The flag defines if filters will be applied to validators. | False |
 
 Example with custom parameters:
 
