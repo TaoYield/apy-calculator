@@ -3,6 +3,7 @@ from typing import Tuple, List, Dict
 from constants import BLOCK_SECONDS, INTERVAL_SECONDS, REQUIRED_BLOCKS_RATIO
 from bittensor import Balance, AsyncSubtensor
 from apy import calculate_apy
+from helpers import get_root_claimable_entries
 
 async def calculate_hotkey_root_apy(
     subtensor: AsyncSubtensor,
@@ -56,28 +57,28 @@ async def calculate_hotkey_root_apy(
     # Sort events for consistent processing
     events.sort(key=lambda x: (x["block"], x["netuid"]))
 
-    # Create root claimable task
+    # Fetch root claimable entries using helper function
     rootClaimableTask = progress.add_task(f"[cyan]Fetching root claimable entries for {hotkey}", total=len(events))
 
-    # Create root claimable query
-    async def query_root_claimable_with_progress(block: int, params: List) -> int:
-        result = await subtensor.query_subtensor("RootClaimable", block=block, params=params)
+    async def get_root_claimable_with_progress(block: int) -> dict:
+        """Get root claimable entries using helper function"""
+        result = await get_root_claimable_entries(subtensor, hotkey, block)
         progress.update(rootClaimableTask, advance=1)
-        return result.value
+        return result if result is not None else -1
     
-    # Prepare root claimable query
+    # Prepare root claimable query tasks
     root_claimable_tasks = [
-        lambda event=event: query_root_claimable_with_progress(event["block"], [hotkey])
+        lambda event=event: get_root_claimable_with_progress(event["block"])
         for event in events
-    ]   
-
+    ]
+    
     # Fetch root claimable entries in batches
-    root_claimable_entries: List[int] = []
+    root_claimable_dicts: List[dict] = []
     for i in range(0, len(root_claimable_tasks), batch_size):
         batch = root_claimable_tasks[i:i + batch_size]
         batch_results = await asyncio.gather(*[task() for task in batch], return_exceptions=True)
         batch_results = [result if not isinstance(result, Exception) else -1 for result in batch_results]
-        root_claimable_entries.extend(batch_results)
+        root_claimable_dicts.extend(batch_results)
 
     # Create stake task
     stakeTask = progress.add_task(f"[cyan]Fetching stakes for {hotkey}", total=len(events))
@@ -108,22 +109,14 @@ async def calculate_hotkey_root_apy(
     skipped = 0
 
     for event_index, event in enumerate(events, 0):
-        # Extract the rao value from the structure: entry[0] is a tuple of (netuid, {'bits': value}) pairs
-        if root_claimable_entries[event_index] == -1:
-            root_div = -1
-        else:
-            entry = root_claimable_entries[event_index]
-            # entry[0] is a tuple: ((netuid1, {'bits': val1}), (netuid2, {'bits': val2}), ...)
-            # Find the tuple where the first element matches our netuid
-            netuid = event["netuid"]
-            netuid_tuple = next((item for item in entry[0] if item[0] == netuid), None)
-            
-            if netuid_tuple is not None:
-                # netuid_tuple is (netuid, {'bits': value}), so get the dict and extract 'bits'
-                root_div = netuid_tuple[1]["bits"]
-            else:
-                # Netuid not found in the entry
-                root_div = 0
+        # get_root_claimable_entries returns dict[netuid, rao_value] where values are in rao
+        claimable_dict = root_claimable_dicts[event_index]
+        if claimable_dict == -1:
+            skipped += 1
+            continue
+        
+        # Get dividend amount for this netuid (already in rao, integer)
+        root_div = claimable_dict.get(event["netuid"], 0)
         
         stake = stakes[event_index]
 
@@ -132,7 +125,7 @@ async def calculate_hotkey_root_apy(
             continue
 
         # Such cases mean that the query failed or stake is zero (zero division).
-        if root_div == -1 or stake == -1 or stake == 0:
+        if stake == -1 or stake == 0:
             skipped += 1
             continue
 
@@ -141,6 +134,7 @@ async def calculate_hotkey_root_apy(
             skipped += 1
             continue
 
+        # Both root_div and stake are in rao (same units), so division gives yield ratio
         epoch_yield = root_div / stake
         total_root_divs += root_div
         yield_product *= (1 + epoch_yield)
