@@ -117,7 +117,6 @@ async def calculate_hotkey_subnet_apy(
         inh_root_stake, inh_subnet_stake = data["inh_root_stake"], data["inh_subnet_stake"]
         tao_weight = data["tao_weight"]
         subnet_div = data["subnet_div"]
-
         # No dividends has no effect on the yield product
         if subnet_div == 0:
             continue
@@ -132,7 +131,7 @@ async def calculate_hotkey_subnet_apy(
             skipped += 1
             continue
 
-        epoch_yield = subnet_div/subnet_stake
+        epoch_yield = subnet_div/(subnet_stake+root_stake*tao_weight)
         divs_sum += subnet_div
         yield_product *= (1+epoch_yield)
 

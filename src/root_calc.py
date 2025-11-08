@@ -32,7 +32,6 @@ async def calculate_hotkey_root_apy(
             - apy: Annualized percentage yield as a float.
             - total_root_divs: Total dividends earned in rao (smallest unit) as an integer.
     """
-
     # Calculate the interval in blocks
     interval_seconds = INTERVAL_SECONDS[interval]
     actual_interval_blocks = int(interval_seconds / BLOCK_SECONDS)
@@ -57,29 +56,29 @@ async def calculate_hotkey_root_apy(
     # Sort events for consistent processing
     events.sort(key=lambda x: (x["block"], x["netuid"]))
 
-    # Create divs task
-    divsTask = progress.add_task(f"[cyan]Fetching divs for {hotkey}", total=len(events))
+    # Create root claimable task
+    rootClaimableTask = progress.add_task(f"[cyan]Fetching root claimable entries for {hotkey}", total=len(events))
 
-    # Create divs query
-    async def query_divs_with_progress(block: int, params: List) -> int:
-        result = await subtensor.query_subtensor("TaoDividendsPerSubnet", block=block, params=params)
-        progress.update(divsTask, advance=1)
+    # Create root claimable query
+    async def query_root_claimable_with_progress(block: int, params: List) -> int:
+        result = await subtensor.query_subtensor("RootClaimable", block=block, params=params)
+        progress.update(rootClaimableTask, advance=1)
         return result.value
     
-    # Prepare dividend tasks
-    root_div_tasks = [
-        lambda event=event: query_divs_with_progress(event["block"], [event["netuid"], hotkey])
+    # Prepare root claimable query
+    root_claimable_tasks = [
+        lambda event=event: query_root_claimable_with_progress(event["block"], [hotkey])
         for event in events
-    ]
+    ]   
 
-    # Fetch dividends in batches
-    root_divs: List[int] = []
-    for i in range(0, len(root_div_tasks), batch_size):
-        batch = root_div_tasks[i:i + batch_size]
+    # Fetch root claimable entries in batches
+    root_claimable_entries: List[int] = []
+    for i in range(0, len(root_claimable_tasks), batch_size):
+        batch = root_claimable_tasks[i:i + batch_size]
         batch_results = await asyncio.gather(*[task() for task in batch], return_exceptions=True)
         batch_results = [result if not isinstance(result, Exception) else -1 for result in batch_results]
-        root_divs.extend(batch_results)
-        
+        root_claimable_entries.extend(batch_results)
+
     # Create stake task
     stakeTask = progress.add_task(f"[cyan]Fetching stakes for {hotkey}", total=len(events))
 
@@ -108,8 +107,24 @@ async def calculate_hotkey_root_apy(
     total_root_divs = 0
     skipped = 0
 
-    for event_index, _ in enumerate(events, 0):
-        root_div = root_divs[event_index]
+    for event_index, event in enumerate(events, 0):
+        # Extract the rao value from the structure: entry[0] is a tuple of (netuid, {'bits': value}) pairs
+        if root_claimable_entries[event_index] == -1:
+            root_div = -1
+        else:
+            entry = root_claimable_entries[event_index]
+            # entry[0] is a tuple: ((netuid1, {'bits': val1}), (netuid2, {'bits': val2}), ...)
+            # Find the tuple where the first element matches our netuid
+            netuid = event["netuid"]
+            netuid_tuple = next((item for item in entry[0] if item[0] == netuid), None)
+            
+            if netuid_tuple is not None:
+                # netuid_tuple is (netuid, {'bits': value}), so get the dict and extract 'bits'
+                root_div = netuid_tuple[1]["bits"]
+            else:
+                # Netuid not found in the entry
+                root_div = 0
+        
         stake = stakes[event_index]
 
         # No dividends has no effect on the yield product.
@@ -144,4 +159,4 @@ async def calculate_hotkey_root_apy(
     apy = calculate_apy(period_yield, compounding_periods)
     progress.console.print(f"APY: {apy:.6f}%")
 
-    return apy, total_root_divs
+    return apy, Balance(total_root_divs).tao
