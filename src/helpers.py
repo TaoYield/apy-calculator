@@ -73,15 +73,12 @@ async def get_root_claimable_entries(subtensor, hotkey, block):
         claimable_dict = {}
         for netuid, bits_data in bits_list:
             # bits_data is {'bits': value} where value is I96F32 fixed-point
-            fixed_point_value = fixed_to_float(bits_data, frac_bits=32, total_bits=128)
-            # Convert float to rao (integer) for consistent units with stake
-            rao_value = Balance(fixed_point_value).rao
-            claimable_dict[netuid] = rao_value
+            claimable_dict[netuid] = fixed_to_float(bits_data, frac_bits=32, total_bits=128)
         
         return claimable_dict
     except Exception:
         return None
-
+    
 async def calc_inherited_on_subnet(subtensor, stake, netuid, parents, children, block):
     alpha_to_children = sum(stake * frac for frac, _ in children)
 
