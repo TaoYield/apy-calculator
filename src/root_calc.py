@@ -40,28 +40,6 @@ async def calculate_hotkey_root_apy(
         except Exception:
             print(msg)
 
-    def median(vals: List[float]) -> float:
-        vs = sorted(vals)
-        n = len(vs)
-        if n == 0:
-            return 0.0
-        if n % 2:
-            return float(vs[n // 2])
-        return 0.5 * (vs[n // 2 - 1] + vs[n // 2])
-
-    async def _call_maybe_async(obj, method_name: str, *args, **kwargs):
-        """Call obj.method_name handling sync/async and awaitable returns."""
-        meth = getattr(obj, method_name, None)
-        if meth is None:
-            return None
-        if asyncio.iscoroutinefunction(meth):
-            res = await meth(*args, **kwargs)
-        else:
-            res = await asyncio.to_thread(meth, *args, **kwargs)
-        if inspect.isawaitable(res):
-            res = await res
-        return res
-
     def normalize_claimable_alpha(d: dict) -> Dict[int, float]:
         """Normalize to {netuid:int -> float α/TAO}."""
         out: Dict[int, float] = {}
@@ -150,15 +128,6 @@ async def calculate_hotkey_root_apy(
         batch_results = await asyncio.gather(*[task() for task in batch], return_exceptions=True)
         stakes_raw.extend([(-1.0 if isinstance(r, Exception) else float(r)) for r in batch_results])
 
-    valid_stakes = [s for s in stakes_raw if s > 0]
-    med_raw = median(valid_stakes) if valid_stakes else 0.0
-    if med_raw < 1e7:
-        stake_scale_to_rao = RAO_PER_TAO    # tao -> rao
-    elif med_raw > 1e11:
-        stake_scale_to_rao = 1              # already rao
-    else:
-        stake_scale_to_rao = 1              # assume rao if ambiguous
-
     # ------------------------ α→tao mid-price via get_subnet_price ------------------------
     # Note: use price *at the event block* if supported; otherwise fallback to head.
     priceTask = progress.add_task(
@@ -200,7 +169,6 @@ async def calculate_hotkey_root_apy(
         batch_results = await asyncio.gather(*[task() for task in batch], return_exceptions=True)
         prices_tao_per_alpha.extend([(-1.0 if isinstance(r, Exception) else float(r)) for r in batch_results])
 
-    # ------------------------ Process & compute ------------------------
     yield_product = 1.0
     total_divs_tao = 0.0
     skipped = 0
@@ -208,7 +176,6 @@ async def calculate_hotkey_root_apy(
     prev_claimable_alpha_by_netuid: Dict[int, float] = dict(baseline_claimable_alpha)
 
     for idx, event in enumerate(events):
-        event_block = event["block"]
         netuid = event["netuid"]
 
         # Claimable rate (α/TAO)
@@ -234,7 +201,7 @@ async def calculate_hotkey_root_apy(
         if stake_raw <= 0:
             skipped += 1
             continue
-        stake_rao = float(stake_raw) * stake_scale_to_rao
+        stake_rao = float(stake_raw)
         stake_tao = stake_rao / RAO_PER_TAO
 
         if (not no_filters) and (stake_tao < 4000):
