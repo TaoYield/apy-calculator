@@ -162,7 +162,7 @@ async def calculate_hotkey_root_apy(
     # ------------------------ α→tao mid-price via get_subnet_price ------------------------
     # Note: use price *at the event block* if supported; otherwise fallback to head.
     priceTask = progress.add_task(
-        f"[cyan]Fetching α→tao prices via get_subnet_price",
+        f"[cyan]Fetching α→tao prices",
         total=len(events)
     )
 
