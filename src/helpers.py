@@ -67,18 +67,21 @@ async def get_root_claimable_entries(subtensor, hotkey, block):
         # Reference: bittensor/core/async_subtensor.py:3189
         bits_list = next(iter(result.value))
         
-        # Convert I96F32 fixed-point to float, then to rao
-        # Reference: bittensor/utils/balance.py:376-391 (fixed_to_float)
-        # I96F32 = 96 integer bits + 32 fractional bits
+        
         claimable_dict = {}
         for netuid, bits_data in bits_list:
-            # bits_data is {'bits': value} where value is I96F32 fixed-point
-            claimable_dict[netuid] = fixed_to_float(bits_data, frac_bits=32, total_bits=128)
+            claimable_dict[netuid] = claimable_float(bits_data)
         
         return claimable_dict
     except Exception:
         return None
-    
+
+# Convert I96F32 fixed-point to float, then to rao
+# Reference: bittensor/utils/balance.py:376-391 (fixed_to_float)
+# I96F32 = 96 integer bits + 32 fractional bits
+def claimable_float(bits_data) -> float:
+    return fixed_to_float(bits_data, frac_bits=32, total_bits=128)
+
 async def calc_inherited_on_subnet(subtensor, stake, netuid, parents, children, block):
     alpha_to_children = sum(stake * frac for frac, _ in children)
 

@@ -6,8 +6,8 @@ from rich.panel import Panel
 from utils.print import print_results
 from utils.env import parse_env_data
 from constants import INTERVAL_SECONDS
-from subnet_calc import calculate_hotkey_subnet_apy
-from root_calc import calculate_hotkey_root_apy
+from subnet_calc import retrieve_and_calculate_hotkey_subnet_apy
+from root_calc import retrieve_and_calculate_hotkey_root_apy
 from bittensor import AsyncSubtensor
 
 VALID_INTERVALS = set(INTERVAL_SECONDS.keys())
@@ -64,12 +64,12 @@ async def main():
                 if netuid > 0:
                     # Calculate subnet APY
                     progress.console.print(f"\nCalculating APY for subnet {netuid}")
-                    apy, divs = await calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size, use_inherited_filter, no_filters)
+                    apy, divs = await retrieve_and_calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size, use_inherited_filter, no_filters)
                     results = [[apy, divs]]
                 else:
                     # Calculate root network APY
                     progress.console.print("\nCalculating root network APY")
-                    apy, divs = await calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size, no_filters)
+                    apy, divs = await retrieve_and_calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size, no_filters)
                     results = [[apy, divs]]
                     
             except Exception as e:

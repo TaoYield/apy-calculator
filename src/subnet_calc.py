@@ -15,7 +15,87 @@ from helpers import (
 )
 
 
-async def calculate_hotkey_subnet_apy(
+def calculate_hotkey_subnet_apy(
+    events: List[Dict],
+    results: List[dict],
+    actual_interval_seconds: float,
+    no_filters: bool = False,
+) -> Tuple[float, float, float, int, float]:
+    """
+    Calculate APY for a hotkey on a subnet from fetched data.
+    
+    This function contains only calculation logic - all data must be provided as arguments.
+    No async operations or external queries are performed.
+    
+    Args:
+        events: List of event dicts with keys: block, netuid, tempo
+        results: List of fetched data dicts (one per event), or -1 for failed queries
+        actual_interval_seconds: Actual interval duration in seconds (for APY calculation)
+        no_filters: If False, apply stake filters to guard noisy events
+    
+    Returns:
+        Tuple[float, float, float, int, float]: (apy_percent, alpha_only_divs_sum_alpha, period_yield, skipped, total_divs_sum_alpha)
+    """
+    total_divs_sum_alpha = 0.0        # raw AlphaDividendsPerSubnet (alpha)
+    alpha_only_divs_sum_alpha = 0.0   # after root deduction (alpha)
+    yield_product = 1.0
+    skipped = 0
+
+    for event_index, _ in enumerate(events):
+        data = results[event_index]
+        if data == -1:
+            skipped += 1
+            continue
+
+        subnet_alpha_stake = data["subnet_alpha_stake"]
+        root_stake_tao     = data["root_stake_tao"]
+        inh_root_stake     = data["inh_root_stake"]
+        inh_subnet_stake   = data["inh_subnet_stake"]
+        tao_weight_param   = data["tao_weight_param"]
+        alpha_div_raw      = data["alpha_div_raw"]
+        d_alpha_per_tao    = data["d_alpha_per_tao"]
+
+        if alpha_div_raw == 0:
+            continue
+
+        # Apply filter as before (guards noisy/minuscule stake epochs)
+        if not no_filters and not has_enough_stake(
+            root_stake_tao, subnet_alpha_stake, inh_root_stake, inh_subnet_stake, tao_weight_param
+        ):
+            skipped += 1
+            continue
+
+        # Root-directed component in *alpha* for this epoch:
+        #   root_alpha = dRC(α/tao) * root_stake_tao(tao)
+        root_alpha_component = d_alpha_per_tao * root_stake_tao
+        if root_alpha_component < 0:
+            root_alpha_component = 0.0
+
+        # Deduct root-directed alpha from the raw credited alpha
+        alpha_only_div = alpha_div_raw - root_alpha_component
+        if alpha_only_div < 0:
+            alpha_only_div = 0.0
+
+        # Denominator is *alpha* stake on the subnet
+        denom = subnet_alpha_stake
+        if denom <= 0:
+            skipped += 1
+            continue
+
+        epoch_yield = alpha_only_div / denom
+
+        alpha_only_divs_sum_alpha += alpha_only_div
+        total_divs_sum_alpha      += alpha_div_raw
+        yield_product             *= (1.0 + epoch_yield)
+
+    period_yield = yield_product - 1.0
+    compounding_periods = INTERVAL_SECONDS["year"] / actual_interval_seconds
+    apy_percent = calculate_apy(period_yield, compounding_periods)
+
+    return apy_percent, alpha_only_divs_sum_alpha, period_yield, skipped, total_divs_sum_alpha
+
+
+async def retrieve_and_calculate_hotkey_subnet_apy(
     subtensor: AsyncSubtensor,
     netuid: int,
     hotkey: str,
@@ -134,57 +214,13 @@ async def calculate_hotkey_subnet_apy(
         batch_results = await asyncio.gather(*[task() for task in batch], return_exceptions=True)
         results.extend([-1 if isinstance(r, Exception) else r for r in batch_results])
 
-    total_divs_sum_alpha = 0.0        # raw AlphaDividendsPerSubnet (alpha)
-    alpha_only_divs_sum_alpha = 0.0   # after root deduction (alpha)
-    yield_product = 1.0
-    skipped = 0
-
-    for event_index, _ in enumerate(events):
-        data = results[event_index]
-        if data == -1:
-            skipped += 1
-            continue
-
-        subnet_alpha_stake = data["subnet_alpha_stake"]
-        root_stake_tao     = data["root_stake_tao"]
-        inh_root_stake     = data["inh_root_stake"]
-        inh_subnet_stake   = data["inh_subnet_stake"]
-        tao_weight_param   = data["tao_weight_param"]
-        alpha_div_raw      = data["alpha_div_raw"]
-        d_alpha_per_tao    = data["d_alpha_per_tao"]
-
-        if alpha_div_raw == 0:
-            continue
-
-        # Apply filter as before (guards noisy/minuscule stake epochs)
-        if not no_filters and not has_enough_stake(
-            root_stake_tao, subnet_alpha_stake, inh_root_stake, inh_subnet_stake, tao_weight_param
-        ):
-            skipped += 1
-            continue
-
-        # Root-directed component in *alpha* for this epoch:
-        #   root_alpha = dRC(α/tao) * root_stake_tao(tao)
-        root_alpha_component = d_alpha_per_tao * root_stake_tao
-        if root_alpha_component < 0:
-            root_alpha_component = 0.0
-
-        # Deduct root-directed alpha from the raw credited alpha
-        alpha_only_div = alpha_div_raw - root_alpha_component
-        if alpha_only_div < 0:
-            alpha_only_div = 0.0
-
-        # Denominator is *alpha* stake on the subnet
-        denom = subnet_alpha_stake
-        if denom <= 0:
-            skipped += 1
-            continue
-
-        epoch_yield = alpha_only_div / denom
-
-        alpha_only_divs_sum_alpha += alpha_only_div
-        total_divs_sum_alpha      += alpha_div_raw
-        yield_product             *= (1.0 + epoch_yield)
+    # ------------------------ Calculation ------------------------
+    apy_percent, alpha_only_divs_sum_alpha, period_yield, skipped, total_divs_sum_alpha = calculate_hotkey_subnet_apy(
+        events=events,
+        results=results,
+        actual_interval_seconds=actual_interval_seconds,
+        no_filters=no_filters,
+    )
 
     if skipped > 0:
         progress.console.print(
@@ -195,14 +231,9 @@ async def calculate_hotkey_subnet_apy(
                 f"[yellow]Coverage is less than: {REQUIRED_BLOCKS_RATIO * 100:.6f}% and can lead to inaccurate results.[/yellow]"
             )
 
-    period_yield = yield_product - 1.0
-    compounding_periods = INTERVAL_SECONDS["year"] / actual_interval_seconds
-
     progress.console.print(f"{interval} percentage yield (alpha-only base): {period_yield * 100:.6f}%")
     progress.console.print(f"{interval} total raw subnet divs [alpha]: {total_divs_sum_alpha:.6f}")
     progress.console.print(f"{interval} alpha-only dividends (after root deduction) [alpha]: {alpha_only_divs_sum_alpha:.6f}")
-
-    apy_percent = calculate_apy(period_yield, compounding_periods)
     progress.console.print(f"apy: {apy_percent:.6f}%")
 
     return apy_percent, alpha_only_divs_sum_alpha

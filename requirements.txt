@@ -1,2 +1,3 @@
 bittensor==10.0.0rc3
 rich == 13.9.2
+pytest>=8.0.0
