@@ -1,4 +1,7 @@
 import asyncio
+import json
+from datetime import datetime
+from pathlib import Path
 from typing import Tuple, List, Dict
 from constants import BLOCK_SECONDS, INTERVAL_SECONDS, REQUIRED_BLOCKS_RATIO
 from bittensor import AsyncSubtensor
@@ -18,6 +21,7 @@ from helpers import (
 def calculate_hotkey_subnet_apy(
     events: List[Dict],
     results: List[dict],
+    baseline_root_claimable_alpha_per_tao: float,
     actual_interval_seconds: float,
     no_filters: bool = False,
 ) -> Tuple[float, float, float, int, float]:
@@ -30,6 +34,7 @@ def calculate_hotkey_subnet_apy(
     Args:
         events: List of event dicts with keys: block, netuid, tempo
         results: List of fetched data dicts (one per event), or -1 for failed queries
+        baseline_root_claimable_alpha_per_tao: Baseline root claimable α/TAO for this netuid at start_block - 1
         actual_interval_seconds: Actual interval duration in seconds (for APY calculation)
         no_filters: If False, apply stake filters to guard noisy events
     
@@ -40,6 +45,9 @@ def calculate_hotkey_subnet_apy(
     alpha_only_divs_sum_alpha = 0.0   # after root deduction (alpha)
     yield_product = 1.0
     skipped = 0
+
+    # Track previous root claimable alpha per tao for delta calculation
+    prev_alpha_per_tao = float(baseline_root_claimable_alpha_per_tao)
 
     for event_index, _ in enumerate(events):
         data = results[event_index]
@@ -53,7 +61,16 @@ def calculate_hotkey_subnet_apy(
         inh_subnet_stake   = data["inh_subnet_stake"]
         tao_weight_param   = data["tao_weight_param"]
         alpha_div_raw      = data["alpha_div_raw"]
-        d_alpha_per_tao    = data["d_alpha_per_tao"]
+        root_claimable_alpha_per_tao = data["root_claimable_alpha_per_tao"]  # Current value at this block
+
+        # Calculate delta: current - previous
+        curr_alpha_per_tao = float(root_claimable_alpha_per_tao)
+        d_alpha_per_tao = curr_alpha_per_tao - prev_alpha_per_tao
+        if d_alpha_per_tao < 0:
+            d_alpha_per_tao = 0.0  # clamp negative deltas
+
+        # Update baseline for next observation
+        prev_alpha_per_tao = curr_alpha_per_tao
 
         if alpha_div_raw == 0:
             continue
@@ -149,24 +166,21 @@ async def retrieve_and_calculate_hotkey_subnet_apy(
           - tao_weight (for filter)
           - subnet_alpha_stake (alpha), root_stake_tao (tao on root)
           - alpha_div_raw (alpha) from AlphaDividendsPerSubnet
-          - RootClaimable at block and block-1 (alpha/tao) for this hotkey
+          - RootClaimable at current block (alpha/tao) for this hotkey
           - inherited stakes (optional)
         """
-        prev_block = max(event_block - 1, 1)
         try:
             (
                 tao_weight_param,
                 subnet_alpha_stake,
                 root_stake_tao,
                 alpha_div_raw,
-                rc_prev_map,
                 rc_curr_map,
             ) = await asyncio.gather(
                 get_tao_weight(subtensor, event_block),
                 get_stake_for_hotkey_on_subnet(subtensor, hotkey, netuid, event_block),
                 get_stake_for_hotkey_on_subnet(subtensor, hotkey, 0, event_block),
                 get_divs_for_hotkey_on_subnet(subtensor, hotkey, netuid, event_block),
-                get_root_claimable_entries(subtensor, hotkey, prev_block),
                 get_root_claimable_entries(subtensor, hotkey, event_block),
             )
 
@@ -182,28 +196,33 @@ async def retrieve_and_calculate_hotkey_subnet_apy(
                     calc_inherited_on_subnet(subtensor, subnet_alpha_stake, netuid, parents, children, event_block),
                 )
 
-            # RootClaimable deltas are per-subnet; extract this netuid
-            prev_alpha_per_tao = float((rc_prev_map or {}).get(netuid, 0.0))
-            curr_alpha_per_tao = float((rc_curr_map or {}).get(netuid, prev_alpha_per_tao))
-            d_alpha_per_tao = curr_alpha_per_tao - prev_alpha_per_tao
-            if d_alpha_per_tao < 0:
-                d_alpha_per_tao = 0.0  # clamp negative deltas
+            # Extract root claimable alpha per tao for this netuid at current block
+            root_claimable_alpha_per_tao = float((rc_curr_map or {}).get(netuid, 0.0))
 
             progress.update(data_task, advance=1)
 
             return {
                 "block": event_block,
                 "tao_weight_param": tao_weight_param,
-                "alpha_div_raw": alpha_div_raw,               # alpha
-                "root_stake_tao": root_stake_tao,             # tao
-                "subnet_alpha_stake": subnet_alpha_stake,     # alpha
+                "alpha_div_raw": alpha_div_raw,                      # alpha
+                "root_stake_tao": root_stake_tao,                    # tao
+                "subnet_alpha_stake": subnet_alpha_stake,            # alpha
                 "inh_root_stake": inh_root_stake,
                 "inh_subnet_stake": inh_subnet_stake,
-                "d_alpha_per_tao": d_alpha_per_tao,           # alpha / tao
+                "root_claimable_alpha_per_tao": root_claimable_alpha_per_tao,  # alpha / tao at current block
             }
         except Exception as e:
             progress.update(data_task, advance=1)
             return -1
+
+    # Fetch baseline root claimable at start_block - 1 (before first event)
+    start_block = events[0]["block"] if events else block
+    baseline_block = max(start_block - 1, 1)
+    baseline_root_claimable_map = await get_root_claimable_entries(subtensor, hotkey, baseline_block)
+    if baseline_root_claimable_map is None:
+        baseline_root_claimable_map = {}
+    # Extract value for this specific netuid
+    baseline_root_claimable_alpha_per_tao = float(baseline_root_claimable_map.get(netuid, 0.0))
 
     # Batch fetch
     data_tasks = [lambda event=event: query_data_with_progress(event["block"], hotkey, netuid) for event in events]
@@ -218,6 +237,7 @@ async def retrieve_and_calculate_hotkey_subnet_apy(
     apy_percent, alpha_only_divs_sum_alpha, period_yield, skipped, total_divs_sum_alpha = calculate_hotkey_subnet_apy(
         events=events,
         results=results,
+        baseline_root_claimable_alpha_per_tao=baseline_root_claimable_alpha_per_tao,
         actual_interval_seconds=actual_interval_seconds,
         no_filters=no_filters,
     )

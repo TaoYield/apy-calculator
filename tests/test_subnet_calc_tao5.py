@@ -1,5 +1,5 @@
 """
-Test for calculate_hotkey_subnet_apy function using real data from calc_args_subnet_20251116_113550.json.
+Test for calculate_hotkey_subnet_apy function using real data from calc_args_subnet_20251117_103000.json.
 
 This test uses actual data captured from a production run to ensure the calculation
 logic produces consistent results.
@@ -13,9 +13,9 @@ from src.subnet_calc import calculate_hotkey_subnet_apy
 
 @pytest.mark.unit
 def test_calculate_hotkey_subnet_apy_tao5():
-    """Test calculate_hotkey_subnet_apy with real data from calc_args_subnet_20251116_113550.json"""
+    """Test calculate_hotkey_subnet_apy with real data from calc_args_subnet_20251117_103000.json"""
     # Load test data from JSON file
-    json_file = Path(__file__).parent / "data" / "calc_args_subnet_20251116_113550.json"
+    json_file = Path(__file__).parent / "data" / "calc_args_subnet_20251117_103000.json"
     
     if not json_file.exists():
         pytest.skip(f"Test data file not found: {json_file}")
@@ -26,6 +26,7 @@ def test_calculate_hotkey_subnet_apy_tao5():
     # Extract inputs and ensure correct types
     events = test_data["events"]
     fetched_data = test_data["fetched_data"]  # This is the 'results' parameter
+    baseline_root_claimable_alpha_per_tao = float(test_data["baseline_root_claimable_alpha_per_tao"])
     actual_interval_seconds = float(test_data["actual_interval_seconds"])
     no_filters = bool(test_data["no_filters"])
     
@@ -59,6 +60,7 @@ def test_calculate_hotkey_subnet_apy_tao5():
     apy_percent, alpha_only_divs_sum_alpha, period_yield, skipped, total_divs_sum_alpha = calculate_hotkey_subnet_apy(
         events=events,
         results=results,
+        baseline_root_claimable_alpha_per_tao=baseline_root_claimable_alpha_per_tao,
         actual_interval_seconds=actual_interval_seconds,
         no_filters=no_filters,
     )
