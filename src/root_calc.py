@@ -1,5 +1,4 @@
 import asyncio
-import inspect
 from typing import Tuple, List, Dict
 
 from constants import BLOCK_SECONDS, INTERVAL_SECONDS, REQUIRED_BLOCKS_RATIO
@@ -221,25 +220,18 @@ async def retrieve_and_calculate_hotkey_root_apy(
         f"[cyan]Fetching α→tao prices",
         total=len(events)
     )
-
+    
     async def get_price_with_progress(at_block: int, netuid: int) -> float:
-        fn = getattr(subtensor, "get_subnet_price", None)
-        if not callable(fn):
-            progress.update(priceTask, advance=1)
-            return -1.0
         try:
-            # Try block-aware call first
-            try:
-                res = fn(netuid=netuid, block=at_block)
-            except TypeError:
-                # Fallback: head price (no block support)
-                res = fn(netuid=netuid)
-
-            if inspect.isawaitable(res):
-                val = await res
-            else:
-                val = res
-            return float(val) if val is not None else -1.0
+            # Use the built-in get_subnet_price method which calls SwapRuntimeApi.current_alpha_price
+            price_balance = await subtensor.get_subnet_price(netuid=netuid, block=at_block)
+            if price_balance is None:
+                return -1.0
+            # Convert Balance to TAO (price is already in TAO/α)
+            price_tao = float(price_balance.tao)
+            if price_tao <= 0:
+                return -1.0
+            return price_tao
         except Exception:
             return -1.0
         finally:

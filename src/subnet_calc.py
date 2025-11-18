@@ -52,6 +52,9 @@ def calculate_hotkey_subnet_apy(
     for event_index, _ in enumerate(events):
         data = results[event_index]
         if data == -1:
+            # Query failed - we don't have claimable value, so we can't update prev_alpha_per_tao
+            # This means the next epoch will calculate delta from the wrong baseline
+            # This is unavoidable when queries fail, but we should still track it
             skipped += 1
             continue
 
@@ -69,16 +72,20 @@ def calculate_hotkey_subnet_apy(
         if d_alpha_per_tao < 0:
             d_alpha_per_tao = 0.0  # clamp negative deltas
 
-        # Update baseline for next observation
+        # IMPORTANT: Update baseline for next observation BEFORE any skip conditions
+        # This ensures that even if we skip this epoch for yield calculation,
+        # the claimable progression is still tracked correctly for delta calculations
         prev_alpha_per_tao = curr_alpha_per_tao
 
         if alpha_div_raw == 0:
+            # Skip yield calculation but claimable was already updated above - correct
             continue
 
         # Apply filter as before (guards noisy/minuscule stake epochs)
         if not no_filters and not has_enough_stake(
             root_stake_tao, subnet_alpha_stake, inh_root_stake, inh_subnet_stake, tao_weight_param
         ):
+            # Skip yield calculation but claimable was already updated above - correct
             skipped += 1
             continue
 
@@ -145,18 +152,40 @@ async def retrieve_and_calculate_hotkey_subnet_apy(
     
     subnet = await subtensor.subnet(netuid, block)
     tempo = subnet.tempo
-    epoch = subnet.last_step
-    progress.console.print(f"current block: {block}, last epoch block: {epoch}")
+    last_epoch_block = subnet.last_step
 
     interval_blocks = calculate_interval_blocks(tempo, interval)
-    actual_interval_seconds = interval_blocks * BLOCK_SECONDS
-
-    # Build list of epoch boundary blocks going backward in time
-    events: List[Dict] = []
+    
+    # Calculate the actual interval using INTERVAL_SECONDS (like root_calc.py)
+    interval_seconds = INTERVAL_SECONDS[interval]
+    actual_interval_blocks = int(interval_seconds / BLOCK_SECONDS)
+    actual_interval_seconds = actual_interval_blocks * BLOCK_SECONDS
+    
+    # FIX: Use exactly N epochs to ensure consistent event count
+    # Calculate expected number of epochs for this interval (floor division)
     period = tempo + 1
-    while epoch >= block - interval_blocks:
+    expected_epochs = actual_interval_blocks // period  # Floor division to get whole epochs
+    if expected_epochs < 1:
+        expected_epochs = 1  # At least 1 epoch
+    
+    # Use exactly expected_epochs epochs as the window
+    # Start from last_epoch_block and go back (expected_epochs - 1) epochs
+    # This ensures we always get exactly expected_epochs events
+    start_block = last_epoch_block - (expected_epochs - 1) * period
+    
+    # Build list of epoch boundary blocks WITHIN the calculation window
+    # Collect exactly expected_epochs events in reverse chronological order (newest first)
+    # Then reverse to chronological (oldest first) for correct delta calculation
+    events: List[Dict] = []
+    epoch = last_epoch_block
+    for _ in range(expected_epochs):
         events.append({"block": epoch, "netuid": netuid, "tempo": tempo})
         epoch -= period
+        if epoch < start_block:
+            break  # Safety check
+    
+    # Reverse to chronological order (oldest first) for correct delta calculation
+    events.reverse()
 
     data_task = progress.add_task(f"[cyan]Fetching data for {hotkey}", total=len(events))
 
@@ -215,9 +244,14 @@ async def retrieve_and_calculate_hotkey_subnet_apy(
             progress.update(data_task, advance=1)
             return -1
 
-    # Fetch baseline root claimable at start_block - 1 (before first event)
-    start_block = events[0]["block"] if events else block
-    baseline_block = max(start_block - 1, 1)
+    # Fetch baseline root claimable at one epoch before the first (oldest) event in the interval
+    # This ensures we can calculate the delta for the first event correctly
+    if len(events) > 0:
+        first_event_block = events[0]["block"]  # Oldest event (first in chronological order)
+        baseline_block = max(first_event_block - period, 1)
+    else:
+        # Fallback: use start_block - period if no events
+        baseline_block = max(start_block - period, 1)
     baseline_root_claimable_map = await get_root_claimable_entries(subtensor, hotkey, baseline_block)
     if baseline_root_claimable_map is None:
         baseline_root_claimable_map = {}
