@@ -1,0 +1,31 @@
+{
+  "events": [
+    {
+      "block": 6892159,
+      "netuid": 51,
+      "tempo": 360
+    }
+  ],
+  "fetched_data": [
+    {
+      "block": 6892159,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 1.485580126,
+      "root_stake_tao": 240446.50948337,
+      "subnet_alpha_stake": 2375.40855654,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0,
+      "root_claimable_alpha_per_tao": 0.0011454860214143991
+    }
+  ],
+  "baseline_root_claimable_alpha_per_tao": 0.001140126958489418,
+  "actual_interval_seconds": 4332.0,
+  "no_filters": false,
+  "results": {
+    "apy_percent": 82.89587346742617,
+    "alpha_only_divs_sum_alpha": 0.19701215158655105,
+    "period_yield": 8.293821753069253e-05,
+    "skipped": 0,
+    "total_divs_sum_alpha": 1.485580126
+  }
+}
