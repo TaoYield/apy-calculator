@@ -1,31 +1,280 @@
 {
   "events": [
     {
-      "block": 6892159,
-      "netuid": 51,
+      "block": 7896448,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7896809,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7897170,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7897531,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7897892,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7898253,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7898614,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7898975,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7899336,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7899697,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7900058,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7900419,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7900780,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7901141,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7901502,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7901863,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7902224,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7902585,
+      "netuid": 64,
+      "tempo": 360
+    },
+    {
+      "block": 7902946,
+      "netuid": 64,
       "tempo": 360
     }
   ],
   "fetched_data": [
     {
-      "block": 6892159,
+      "block": 7896448,
       "tao_weight_param": 0.18,
-      "alpha_div_raw": 1.485580126,
-      "root_stake_tao": 240446.50948337,
-      "subnet_alpha_stake": 2375.40855654,
+      "alpha_div_raw": 49.583898701,
+      "root_stake_tao": 344.044077524,
+      "subnet_alpha_stake": 883116.647690069,
       "inh_root_stake": 0.0,
-      "inh_subnet_stake": 0.0,
-      "root_claimable_alpha_per_tao": 0.0011454860214143991
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7896809,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.591532381,
+      "root_stake_tao": 344.044077524,
+      "subnet_alpha_stake": 883383.597302082,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7897170,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.586011678,
+      "root_stake_tao": 344.044077524,
+      "subnet_alpha_stake": 883626.363612932,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7897531,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.586726741,
+      "root_stake_tao": 344.044077524,
+      "subnet_alpha_stake": 883709.775775052,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7897892,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.578603346,
+      "root_stake_tao": 344.044077524,
+      "subnet_alpha_stake": 883678.133552406,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7898253,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.62800463,
+      "root_stake_tao": 344.044163527,
+      "subnet_alpha_stake": 885890.14859281,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7898614,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.669174323,
+      "root_stake_tao": 344.044163527,
+      "subnet_alpha_stake": 886078.115251025,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7898975,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.701621711,
+      "root_stake_tao": 344.044163527,
+      "subnet_alpha_stake": 887283.225566604,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7899336,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.695444347,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887348.142574243,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7899697,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.692152355,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887415.6662073,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7900058,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.676557563,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887086.13460628,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7900419,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.668811614,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887208.841927666,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7900780,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.708886496,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887195.879174841,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7901141,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.617508137,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887058.662902197,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7901502,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.607743918,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887143.238450736,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7901863,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.590396543,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 886949.243813397,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7902224,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.585038182,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887096.405543951,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7902585,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.523757363,
+      "root_stake_tao": 344.044280171,
+      "subnet_alpha_stake": 887588.134865675,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
+    },
+    {
+      "block": 7902946,
+      "tao_weight_param": 0.18,
+      "alpha_div_raw": 49.522661892,
+      "root_stake_tao": 344.045244052,
+      "subnet_alpha_stake": 887678.391917855,
+      "inh_root_stake": 0.0,
+      "inh_subnet_stake": 0.0
     }
   ],
-  "baseline_root_claimable_alpha_per_tao": 0.001140126958489418,
-  "actual_interval_seconds": 4332.0,
+  "actual_interval_seconds": 86400.0,
   "no_filters": false,
   "results": {
-    "apy_percent": 82.89587346742617,
-    "alpha_only_divs_sum_alpha": 0.19701215158655105,
-    "period_yield": 8.293821753069253e-05,
-    "skipped": 0,
-    "total_divs_sum_alpha": 1.485580126
+    "apy_percent": 47.45269712656304,
+    "divs_sum_alpha": 942.8145319209998,
+    "period_yield": 0.0010645038287637743,
+    "skipped": 0
   }
 }
