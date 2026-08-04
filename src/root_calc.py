@@ -1,10 +1,25 @@
 import asyncio
 from typing import Tuple, List, Dict
 
-from constants import BLOCK_SECONDS, INTERVAL_SECONDS, REQUIRED_BLOCKS_RATIO
+import math
+
+from constants import (
+    BLOCK_SECONDS,
+    INTERVAL_SECONDS,
+    REQUIRED_BLOCKS_RATIO,
+    BASKET_MIN_SPAN_BLOCKS,
+    BASKET_MAX_SAMPLES,
+    ROOT_MIN_STAKE_TAO,
+    RAO_PER_TAO,
+)
 from bittensor import AsyncSubtensor
 from apy import calculate_apy
-from helpers import get_root_claimable_entries, get_basket_deposited_tao, query_subtensor
+from helpers import (
+    get_root_claimable_entries,
+    get_basket_deposited_tao,
+    basket_supported,
+    query_subtensor,
+)
 
 
 def normalize_claimable_alpha(d: dict) -> Dict[int, float]:
@@ -112,11 +127,6 @@ def calculate_hotkey_root_apy(
     return apy, float(total_divs_tao), period_yield, skipped
 
 
-# Shortest measured span we will annualize (~10 min at 12s blocks). Below this the per-block
-# rate is dominated by sampling noise and the compounding exponent explodes.
-MIN_BASKET_SPAN_BLOCKS = 50
-
-
 def calculate_hotkey_root_apy_from_baskets(
     observations: List[Dict],
     no_filters: bool = False,
@@ -150,8 +160,6 @@ def calculate_hotkey_root_apy_from_baskets(
     Returns:
         Tuple[float, float, float, int]: (apy_percent, total_dividends_tao, period_yield, skipped)
     """
-    RAO_PER_TAO = 10**9
-
     if len(observations) < 2:
         # A single sample is only a baseline; there is no interval to measure across.
         return 0.0, 0.0, 0.0, 0
@@ -174,7 +182,9 @@ def calculate_hotkey_root_apy_from_baskets(
 
         stake_rao = float(curr["stake_rao"])
         stake_tao = stake_rao / RAO_PER_TAO
-        if stake_rao <= 0 or ((not no_filters) and stake_tao < 4000):
+        # A non-finite stake would pass both comparisons below (nan <= 0 and nan < floor are
+        # both False) and poison the yield with nan, so reject it explicitly.
+        if not math.isfinite(stake_rao) or stake_rao <= 0 or ((not no_filters) and stake_tao < ROOT_MIN_STAKE_TAO):
             skipped += 1
             prev = curr
             continue
@@ -193,11 +203,18 @@ def calculate_hotkey_root_apy_from_baskets(
     # Annualizing a very short span is numerically explosive: two samples one block apart would
     # compound the pair ~2.6M times. Report no data instead (skipped is forced non-zero so
     # callers relying on coverage see the window as unusable).
-    if contributing_blocks < MIN_BASKET_SPAN_BLOCKS:
+    if contributing_blocks < BASKET_MIN_SPAN_BLOCKS:
         return 0.0, float(total_divs_tao), period_yield, max(skipped, 1)
 
     observed_seconds = contributing_blocks * BLOCK_SECONDS
     compounding_periods = INTERVAL_SECONDS["year"] / observed_seconds
+
+    # (1 + y) ** compounding_periods overflows float range for even a modest y over a short span
+    # (at the ~50 block floor the exponent is ~52,560, which overflows around y = 1.4%). That
+    # raises OverflowError or yields a meaningless ~1e229%, so treat it as unmeasurable instead.
+    if period_yield > -1.0 and math.log1p(period_yield) * compounding_periods > 700:
+        return 0.0, float(total_divs_tao), period_yield, max(skipped, 1)
+
     apy = calculate_apy(period_yield, compounding_periods)
 
     return apy, float(total_divs_tao), period_yield, skipped
@@ -257,13 +274,18 @@ async def retrieve_and_calculate_hotkey_root_apy(
 
     # ------------------------ Baskets (spec 441) take precedence ------------------------
     # RootClaimable is frozen from spec 441 onwards, so prefer the basket series whenever the
-    # chain has it. Pre-441 blocks have no BasketDepositedTao entry and fall through to the
-    # claimable path below.
+    # runtime exposes it. Capability is read from metadata rather than inferred from a failed
+    # query, so a transient RPC error cannot silently downgrade us to the claimable path (which
+    # on a post-441 chain can only report 0%).
     baseline_block = max(start_block - 1, 0)
-    if await get_basket_deposited_tao(subtensor, hotkey, block) is not None:
-        # Deposits are per-validator, not per-subnet, so one sample per distinct epoch block is
-        # enough -- no need for the per-(block, netuid) fan-out the claimable path requires.
-        sample_blocks = sorted({event["block"] for event in events})
+    if await basket_supported(subtensor):
+        # Deposits are cumulative and per-validator, so income between two samples is captured
+        # in full by their delta. That means a fixed cadence loses nothing versus sampling every
+        # epoch boundary, and avoids tens of thousands of historical state reads on a 30d window.
+        step = max(1, math.ceil(actual_interval_blocks / BASKET_MAX_SAMPLES))
+        sample_blocks = list(range(start_block, block + 1, step))
+        if not sample_blocks or sample_blocks[-1] != block:
+            sample_blocks.append(block)
         sample_blocks = [baseline_block] + [b for b in sample_blocks if b > baseline_block]
 
         basketTask = progress.add_task(
@@ -271,27 +293,33 @@ async def retrieve_and_calculate_hotkey_root_apy(
             total=len(sample_blocks)
         )
 
+        # Sentinel rather than None on failure: a dropped sample must be counted, because
+        # computing coverage over survivors alone would report 100% for a window where nearly
+        # every fetch failed, and publish a confident APY from whatever happened to succeed.
         async def get_basket_sample(at_block: int):
             try:
                 deposited = await get_basket_deposited_tao(subtensor, hotkey, at_block)
                 stake = await query_subtensor(subtensor, "TotalHotkeyAlpha", at_block, [hotkey, 0])
                 if deposited is None or stake is None:
-                    return None
+                    return -1
                 return {"block": at_block, "deposited_rao": deposited, "stake_rao": float(stake)}
             except Exception:
-                return None
+                return -1
             finally:
                 progress.update(basketTask, advance=1)
 
         observations: List[Dict] = []
+        failed = 0
         for i in range(0, len(sample_blocks), batch_size):
             batch = sample_blocks[i : i + batch_size]
             batch_results = await asyncio.gather(
                 *[get_basket_sample(b) for b in batch], return_exceptions=True
             )
-            observations.extend(
-                r for r in batch_results if isinstance(r, dict)
-            )
+            for r in batch_results:
+                if isinstance(r, dict):
+                    observations.append(r)
+                else:
+                    failed += 1
 
         observations.sort(key=lambda o: o["block"])
 
@@ -300,18 +328,27 @@ async def retrieve_and_calculate_hotkey_root_apy(
             no_filters=no_filters,
         )
 
-        usable_pairs = max(len(observations) - 1, 0)
-        if usable_pairs == 0:
+        # Coverage is measured against the samples we ASKED for, counting both fetch failures
+        # and pairs the calculation rejected.
+        expected_pairs = max(len(sample_blocks) - 1, 0)
+        good_pairs = expected_pairs - failed - skipped
+        if expected_pairs == 0 or good_pairs <= 0:
             log("[yellow]No usable basket samples in window — APY unavailable.[/yellow]")
-        elif usable_pairs - skipped < REQUIRED_BLOCKS_RATIO * usable_pairs:
+        elif good_pairs < REQUIRED_BLOCKS_RATIO * expected_pairs:
             log(
-                f"[yellow]Coverage {usable_pairs - skipped}/{usable_pairs} "
-                f"({(usable_pairs - skipped)/usable_pairs*100:.2f}%) < required "
-                f"{REQUIRED_BLOCKS_RATIO*100:.2f}% — APY may be inaccurate.[/yellow]"
+                f"[yellow]Coverage {good_pairs}/{expected_pairs} "
+                f"({good_pairs/expected_pairs*100:.2f}%) < required "
+                f"{REQUIRED_BLOCKS_RATIO*100:.2f}% "
+                f"({failed} fetch failures, {skipped} skipped) — APY may be inaccurate.[/yellow]"
             )
 
-        log(f"Total {interval} yield: {period_yield * 100:.6f}%")
-        log(f"Total {interval} dividends (tao):   {total_dividends_tao:.12f} tao")
+        # The measured span can be shorter than the nominal interval while history backfills, so
+        # label the period figures with what was actually observed rather than the interval name.
+        measured_blocks = (observations[-1]["block"] - observations[0]["block"]) if len(observations) > 1 else 0
+        log(f"Measured span: {measured_blocks} blocks ({measured_blocks * BLOCK_SECONDS / 3600:.2f}h), "
+            f"{len(observations)} samples")
+        log(f"Basket yield over measured span: {period_yield * 100:.6f}%")
+        log(f"Basket dividends over measured span: {total_dividends_tao:.12f} tao")
         log(f"APY: {apy:.6f}%")
 
         return apy, float(total_dividends_tao)

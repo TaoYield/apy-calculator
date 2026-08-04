@@ -12,3 +12,18 @@ INTERVAL_SECONDS = {
 }
 
 REQUIRED_BLOCKS_RATIO = 0.9
+# --- Root basket (runtime spec 441) ---
+
+# Shortest measured span we will annualize (~10 min at 12s blocks). Below this the per-block
+# rate is dominated by sampling noise and the compounding exponent explodes.
+BASKET_MIN_SPAN_BLOCKS = 50
+
+# Cap on basket samples per window. BasketDepositedTao is cumulative, so income between two
+# samples is captured in full by their delta -- sampling on a cadence loses nothing and keeps a
+# 30d window (~216k blocks) from issuing tens of thousands of historical state reads.
+BASKET_MAX_SAMPLES = 200
+
+# Root stake floor (TAO) below which a sample is treated as noise.
+ROOT_MIN_STAKE_TAO = 4000
+
+RAO_PER_TAO = 10**9

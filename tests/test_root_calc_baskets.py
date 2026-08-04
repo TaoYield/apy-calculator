@@ -9,7 +9,8 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from root_calc import calculate_hotkey_root_apy_from_baskets, MIN_BASKET_SPAN_BLOCKS
+from root_calc import calculate_hotkey_root_apy_from_baskets
+from constants import BASKET_MIN_SPAN_BLOCKS
 
 # Root stake comfortably above the 4000 TAO floor.
 ROOT_STAKE_RAO = 173_547_671_079_432  # ~173,547 TAO
@@ -130,10 +131,37 @@ def test_zero_stake_is_skipped():
 
     apy, _, _, skipped = calculate_hotkey_root_apy_from_baskets(observations)
 
-    assert skipped == 2 or apy == 0.0
+    # Two observations form exactly one pair, so at most one skip is possible.
+    assert skipped == 1
     assert apy == 0.0
 
 
-def test_min_span_constant_is_sane():
-    """Guard the constant itself: it must be long enough to reject adjacent-block noise."""
-    assert MIN_BASKET_SPAN_BLOCKS >= 10
+def test_huge_yield_over_short_span_does_not_overflow():
+    """
+    (1 + y) ** compounding_periods overflows float range for a modest y over a short span: at
+    the ~50 block floor the exponent is ~52,560, which overflows around y = 1.4%. That must be
+    reported as unmeasurable rather than raising OverflowError or printing ~1e229%.
+    """
+    observations = [
+        obs(8_000_000, 0),
+        obs(8_000_000 + BASKET_MIN_SPAN_BLOCKS, int(0.05 * ROOT_STAKE_TAO * 1e9)),  # +5% in ~10 min
+    ]
+
+    apy, _, _, skipped = calculate_hotkey_root_apy_from_baskets(observations)
+
+    assert apy == 0.0
+    assert skipped >= 1
+
+
+def test_non_finite_stake_is_rejected():
+    """nan passes both `<= 0` and `< floor`, so it must be rejected explicitly or it poisons APY."""
+    observations = [
+        obs(1000, 1_000_000_000, float("nan")),
+        obs(2000, 2_000_000_000, float("nan")),
+    ]
+
+    apy, _, period_yield, skipped = calculate_hotkey_root_apy_from_baskets(observations)
+
+    assert skipped == 1
+    assert apy == 0.0
+    assert period_yield == 0.0

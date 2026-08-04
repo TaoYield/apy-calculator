@@ -3,6 +3,12 @@ from bittensor.core.chain_data import decode_account_id
 from bittensor.utils import U64_MAX
 from bittensor.utils.balance import fixed_to_float
 
+try:
+    from async_substrate_interface.errors import StorageFunctionNotFound
+except ImportError:  # pragma: no cover - older SDKs raise a generic error instead
+    class StorageFunctionNotFound(Exception):
+        pass
+
 async def query_subtensor(subtensor, name, block, params=[]):
     res = await subtensor.query_subtensor(name=name, params=params, block=block)
     return getattr(res, "value", None)
@@ -82,6 +88,22 @@ async def get_root_claimable_entries(subtensor, hotkey, block):
 def claimable_float(bits_data) -> float:
     return fixed_to_float(bits_data, frac_bits=32, total_bits=128)
 
+async def basket_supported(subtensor) -> bool:
+    """
+    True when the runtime exposes the spec 441 basket storage.
+
+    Checked against runtime metadata rather than by attempting a query, so a transient RPC
+    failure can never be mistaken for "pre-441". That distinction matters: falling back to the
+    claimable path on a post-441 chain yields a confident 0%, since RootClaimable is frozen
+    there. Note get_metadata_storage_function returns None (it does not raise) for an unknown
+    item, while genuine transport errors propagate.
+    """
+    fn = await subtensor.substrate.get_metadata_storage_function(
+        "SubtensorModule", "BasketDepositedTao"
+    )
+    return fn is not None
+
+
 async def get_basket_deposited_tao(subtensor, hotkey, block):
     """
     Get a validator's cumulative basket deposits (in rao) at a block, or None.
@@ -93,17 +115,27 @@ async def get_basket_deposited_tao(subtensor, hotkey, block):
     basket already held -- which is what the pre-441 metric measured (newly accrued alpha
     priced at that epoch).
 
-    Storage type: StorageMap<AccountId, u64> (rao). Returns None on pre-441 blocks, where the
-    storage item does not exist in the runtime.
+    Storage type: StorageMap<AccountId, u64> (rao). Returns None only when the storage item is
+    absent from the runtime (pre-441). Transport and decode errors are NOT swallowed: a caller
+    must be able to tell "no basket on this chain" from "the query failed", because treating
+    the latter as the former silently produces a wrong number.
     """
     try:
         result = await subtensor.query_subtensor("BasketDepositedTao", block=block, params=[hotkey])
-        value = getattr(result, "value", None)
-        if value is None:
-            return None
-        return int(value)
-    except Exception:
+    except StorageFunctionNotFound:
         return None
+
+    value = getattr(result, "value", None)
+    if value is None:
+        # Storage exists but this hotkey has no basket entry yet -- zero deposits so far.
+        return 0
+    # int() on a dict/list raises rather than silently producing nonsense. The u64 range check
+    # rejects an implausible value at the trust boundary, before it can reach float math where a
+    # very large int raises OverflowError far from its source.
+    deposited = int(value)
+    if deposited < 0 or deposited > U64_MAX:
+        raise ValueError(f"BasketDepositedTao out of u64 range: {deposited}")
+    return deposited
 
 async def calc_inherited_on_subnet(subtensor, stake, netuid, parents, children, block):
     alpha_to_children = sum(stake * frac for frac, _ in children)
