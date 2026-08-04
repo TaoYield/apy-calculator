@@ -82,6 +82,29 @@ async def get_root_claimable_entries(subtensor, hotkey, block):
 def claimable_float(bits_data) -> float:
     return fixed_to_float(bits_data, frac_bits=32, total_bits=128)
 
+async def get_basket_deposited_tao(subtensor, hotkey, block):
+    """
+    Get a validator's cumulative basket deposits (in rao) at a block, or None.
+
+    Runtime spec 441 ("Root Reborn") retired the RootClaimable rate and moved root dividends
+    into a per-validator escrowed basket. BasketDepositedTao accumulates the TAO value of every
+    dividend credited to that basket, valued at the price prevailing when each increment
+    accrued. Its delta is therefore income only, excluding mark-to-market moves on alpha the
+    basket already held -- which is what the pre-441 metric measured (newly accrued alpha
+    priced at that epoch).
+
+    Storage type: StorageMap<AccountId, u64> (rao). Returns None on pre-441 blocks, where the
+    storage item does not exist in the runtime.
+    """
+    try:
+        result = await subtensor.query_subtensor("BasketDepositedTao", block=block, params=[hotkey])
+        value = getattr(result, "value", None)
+        if value is None:
+            return None
+        return int(value)
+    except Exception:
+        return None
+
 async def calc_inherited_on_subnet(subtensor, stake, netuid, parents, children, block):
     alpha_to_children = sum(stake * frac for frac, _ in children)
 
