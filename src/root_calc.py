@@ -19,6 +19,7 @@ from helpers import (
     get_basket_deposited_tao,
     basket_supported,
     query_subtensor,
+    unwrap_scalar,
 )
 
 
@@ -256,29 +257,19 @@ async def retrieve_and_calculate_hotkey_root_apy(
     actual_interval_seconds = actual_interval_blocks * BLOCK_SECONDS
     start_block = block - actual_interval_blocks
 
-    subnets = await subtensor.get_all_subnets_info(block=block)
-
-    # Build epoch boundary events per subnet
-    events: List[Dict] = []
-    for subnet in subnets:
-        netuid = subnet.netuid
-        tempo = subnet.tempo
-        period = tempo + 1
-        last_epoch_block = block - subnet.blocks_since_epoch
-        epoch = last_epoch_block
-        while epoch >= start_block:
-            events.append({"block": epoch, "netuid": netuid, "period": period})
-            epoch -= period
-
-    events.sort(key=lambda x: (x["block"], x["netuid"]))
-
     # ------------------------ Baskets (spec 441) take precedence ------------------------
     # RootClaimable is frozen from spec 441 onwards, so prefer the basket series whenever the
     # runtime exposes it. Capability is read from metadata rather than inferred from a failed
     # query, so a transient RPC error cannot silently downgrade us to the claimable path (which
     # on a post-441 chain can only report 0%).
+    # Check capability BEFORE the claimable prep: `get_all_subnets_info` is only needed for the
+    # legacy per-subnet epoch-boundary events, and on a post-441 mainnet it currently fails
+    # inside bittensor (`Swap.AlphaSqrtPrice` storage was renamed; Balance decoded from a tuple).
+    # Doing the check first also avoids ~128 subnet decodes we don't use when basket is live.
     baseline_block = max(start_block - 1, 0)
-    if await basket_supported(subtensor):
+    basket_live = await basket_supported(subtensor)
+
+    if basket_live:
         # Deposits are cumulative and per-validator, so income between two samples is captured
         # in full by their delta. That means a fixed cadence loses nothing versus sampling every
         # epoch boundary, and avoids tens of thousands of historical state reads on a 30d window.
@@ -353,6 +344,24 @@ async def retrieve_and_calculate_hotkey_root_apy(
 
         return apy, float(total_dividends_tao)
 
+    # ------------------------ Claimable-path prep (pre-441 only) ------------------------
+    # Legacy per-subnet epoch boundaries — only built when basket storage is absent, since on
+    # post-441 chains this can be tens of thousands of state reads that we do not use.
+    subnets = await subtensor.get_all_subnets_info(block=block)
+
+    events: List[Dict] = []
+    for subnet in subnets:
+        netuid = subnet.netuid
+        tempo = subnet.tempo
+        period = tempo + 1
+        last_epoch_block = block - subnet.blocks_since_epoch
+        epoch = last_epoch_block
+        while epoch >= start_block:
+            events.append({"block": epoch, "netuid": netuid, "period": period})
+            epoch -= period
+
+    events.sort(key=lambda x: (x["block"], x["netuid"]))
+
     # ------------------------ RootClaimable (α/TAO), with baseline ------------------------
     rootClaimableTask = progress.add_task(
         f"[cyan]Fetching root claimable entries for {hotkey}",
@@ -385,7 +394,7 @@ async def retrieve_and_calculate_hotkey_root_apy(
     async def query_stake_with_progress(at_block: int, params: List) -> float:
         try:
             result = await subtensor.query_subtensor("TotalHotkeyAlpha", block=at_block, params=params)
-            return float(result.value)  # may be tao or rao; convert later
+            return float(unwrap_scalar(result.value))  # may be tao or rao; convert later
         except Exception:
             return -1.0
         finally:

@@ -9,9 +9,22 @@ except ImportError:  # pragma: no cover - older SDKs raise a generic error inste
     class StorageFunctionNotFound(Exception):
         pass
 
+
+def unwrap_scalar(value):
+    # Some async-substrate-interface / runtime-metadata combos decode a scalar storage item
+    # (u64, u128, I96F32) into a 1-element list/tuple instead of the raw value. Observed live
+    # against mainnet spec 443: `TotalHotkeyAlpha` -> `[171545078055037]`,
+    # `BasketDepositedTao` -> `[8621903000]`. Callers convert to int/float, which raises on the
+    # container. Unwrap only the 1-element case so BTreeMap / composite decodings pass through
+    # untouched.
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        return value[0]
+    return value
+
+
 async def query_subtensor(subtensor, name, block, params=[]):
     res = await subtensor.query_subtensor(name=name, params=params, block=block)
-    return getattr(res, "value", None)
+    return unwrap_scalar(getattr(res, "value", None))
 
 async def get_children(subtensor, hotkey, netuid, block):
     resp = await query_subtensor(subtensor, "ChildKeys", block, [hotkey, netuid]) or []
@@ -31,17 +44,17 @@ async def get_divs_for_hotkey_on_subnet(subtensor, hotkey, netuid, block):
 
 async def get_total_stake(subtensor, hotkey, block=None):
     resp = await subtensor.query_subtensor(name='TotalHotkeyAlpha', params=[hotkey, 0], block=block)
-    val = getattr(resp, "value", 0)
+    val = unwrap_scalar(getattr(resp, "value", 0))
     return Balance.from_rao(val).tao
 
 async def get_tao_weight(subtensor, block):
     resp = await subtensor.query_subtensor(name="TaoWeight", block=block, params=[])
-    raw = getattr(resp, "value", 0)
+    raw = unwrap_scalar(getattr(resp, "value", 0))
     return raw / (2**64 - 1)
 
 async def get_childkey_take(subtensor, hotkey, netuid, block):
     r = await subtensor.query_subtensor(name='ChildkeyTake', params=[hotkey, netuid], block=block)
-    return getattr(r, "value", 0)
+    return unwrap_scalar(getattr(r, "value", 0))
 
 async def get_root_claimable_entries(subtensor, hotkey, block):
     """
@@ -125,7 +138,7 @@ async def get_basket_deposited_tao(subtensor, hotkey, block):
     except StorageFunctionNotFound:
         return None
 
-    value = getattr(result, "value", None)
+    value = unwrap_scalar(getattr(result, "value", None))
     if value is None:
         # Storage exists but this hotkey has no basket entry yet -- zero deposits so far.
         return 0
