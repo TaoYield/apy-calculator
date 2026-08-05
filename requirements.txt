@@ -1,3 +1,7 @@
 bittensor==10.0.0rc3
+# bittensor 10.0.0rc3 leaves async-substrate-interface unpinned; pip resolves to 2.x, which
+# refuses to import when `scalecodec` (pulled by bittensor's own deps) is present. Pin to the
+# last 1.x that both imports cleanly and returns storage values in a form our unwrap handles.
+async-substrate-interface>=1.5.6,<2
 rich == 13.9.2
 pytest>=8.0.0
