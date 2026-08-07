@@ -7,7 +7,7 @@ from utils.print import print_results
 from utils.env import parse_env_data
 from constants import INTERVAL_SECONDS
 from subnet_calc import retrieve_and_calculate_hotkey_subnet_apy
-from root_calc import retrieve_and_calculate_hotkey_root_apy
+from root_calc_epoch import calculate_hotkey_root_apy_epoch_aligned
 from bittensor import AsyncSubtensor
 
 VALID_INTERVALS = set(INTERVAL_SECONDS.keys())
@@ -67,10 +67,12 @@ async def main():
                     apy, divs = await retrieve_and_calculate_hotkey_subnet_apy(subtensor, netuid, hotkey, interval, block, progress, batch_size, use_inherited_filter, no_filters)
                     results = [[apy, divs]]
                 else:
-                    # Calculate root network APY
+                    # Calculate root network APY (epoch-aligned time-weighted average)
                     progress.console.print("\nCalculating root network APY")
-                    apy, divs = await retrieve_and_calculate_hotkey_root_apy(subtensor, hotkey, interval, block, progress, batch_size, no_filters)
-                    results = [[apy, divs]]
+                    apy, total_annual_tao, _contribs = await calculate_hotkey_root_apy_epoch_aligned(
+                        subtensor, hotkey, interval, block, no_filters=no_filters,
+                    )
+                    results = [[apy, total_annual_tao]]
                     
             except Exception as e:
                 progress.console.print(f"Error calculating APY: {str(e)}")
