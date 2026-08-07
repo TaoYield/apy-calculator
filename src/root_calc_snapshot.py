@@ -38,7 +38,7 @@ from typing import Tuple, List
 
 from constants import BLOCK_SECONDS, INTERVAL_SECONDS, RAO_PER_TAO, ROOT_MIN_STAKE_TAO
 from bittensor import AsyncSubtensor
-from helpers import query_subtensor
+from helpers import query_subtensor, unwrap_scalar
 
 
 YEAR_BLOCKS = INTERVAL_SECONDS["year"] / BLOCK_SECONDS  # 2_628_000
