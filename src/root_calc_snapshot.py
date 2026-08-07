@@ -65,13 +65,34 @@ async def calculate_hotkey_root_apy_snapshot(
     if (not no_filters) and root_stake_tao < ROOT_MIN_STAKE_TAO:
         return 0.0, 0.0, []
 
-    # Snapshot of every subnet's tempo + price via a single bulk call.
-    subnets = await subtensor.get_all_subnets_info(block=block)
+    # We deliberately don't use `subtensor.get_all_subnets_info(block=block)` here — it
+    # decodes fields (e.g. `burn`) that come back as tuples on post-441 mainnet and blows up
+    # inside bittensor's Balance.from_rao. Same class of bug we already worked around in the
+    # basket path. Query the primitives directly instead.
+    #
+    # 1) Enumerate active netuids from NetworksAdded (SubtensorModule).
+    # 2) For each, read Tempo(netuid) — one chain hit per subnet, cheap in parallel.
+    netuids_map = await subtensor.substrate.query_map(
+        module="SubtensorModule", storage_function="NetworksAdded",
+        block_hash=await subtensor.substrate.get_block_hash(block),
+    )
+    netuids: List[int] = []
+    async for netuid, added in netuids_map:
+        nu = getattr(netuid, "value", netuid)
+        try:
+            nu = int(nu)
+        except (TypeError, ValueError):
+            continue
+        if nu == 0:
+            continue  # root itself isn't a source of root dividends
+        netuids.append(nu)
 
-    async def one_subnet(subnet):
-        netuid = subnet.netuid
-        tempo = subnet.tempo
-        if netuid == 0 or tempo is None or int(tempo) == 0:
+    async def one_subnet(netuid: int):
+        tempo_raw = await query_subtensor(subtensor, "Tempo", block, [netuid])
+        if not tempo_raw:
+            return None
+        tempo = int(tempo_raw)
+        if tempo == 0:
             return None
 
         # Last epoch's alpha dividend for this (netuid, hotkey). Written atomically at each
@@ -94,12 +115,12 @@ async def calculate_hotkey_root_apy_snapshot(
             return None
 
         per_epoch_tao = (per_epoch_alpha_rao / RAO_PER_TAO) * price_tao_per_alpha
-        epochs_per_year = YEAR_BLOCKS / int(tempo)
+        epochs_per_year = YEAR_BLOCKS / tempo
         annual_tao = per_epoch_tao * epochs_per_year
 
         return {
-            "netuid": int(netuid),
-            "tempo": int(tempo),
+            "netuid": netuid,
+            "tempo": tempo,
             "per_epoch_alpha": per_epoch_alpha_rao / RAO_PER_TAO,
             "price_tao_per_alpha": price_tao_per_alpha,
             "per_epoch_tao": per_epoch_tao,
@@ -107,8 +128,8 @@ async def calculate_hotkey_root_apy_snapshot(
             "annual_tao": annual_tao,
         }
 
-    # Kick off all per-subnet reads concurrently (~128 subnets, each 2 chain reads).
-    results = await asyncio.gather(*[one_subnet(s) for s in subnets])
+    # Kick off all per-subnet reads concurrently.
+    results = await asyncio.gather(*[one_subnet(nu) for nu in netuids])
     contributions = [r for r in results if r is not None]
 
     total_annual_tao = sum(c["annual_tao"] for c in contributions)
