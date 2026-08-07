@@ -137,14 +137,29 @@ async def calculate_hotkey_root_apy_snapshot(
         if per_epoch_alpha_rao == 0:
             return None
 
-        # Price of subnet alpha in TAO (mid, from the swap pool at this block).
+        # Price = SubnetTAO / SubnetAlphaIn (pool reserves, both in rao). Direct storage
+        # read, doesn't depend on runtime `Swap.AlphaSqrtPrice` which is missing on spec 443
+        # and causes `get_subnet_price` to fail silently.
         try:
-            price_balance = await subtensor.get_subnet_price(netuid=netuid, block=block)
-            price_tao_per_alpha = float(price_balance.tao) if price_balance is not None else 0.0
-        except Exception:
-            price_tao_per_alpha = 0.0
-        if price_tao_per_alpha <= 0:
+            tao_res = await subtensor.substrate.query(
+                module="SubtensorModule", storage_function="SubnetTAO",
+                params=[netuid], block_hash=block_hash,
+            )
+            alpha_res = await subtensor.substrate.query(
+                module="SubtensorModule", storage_function="SubnetAlphaIn",
+                params=[netuid], block_hash=block_hash,
+            )
+            tao_in_rao = int(unwrap_scalar(getattr(tao_res, "value", 0)) or 0)
+            alpha_in_rao = int(unwrap_scalar(getattr(alpha_res, "value", 0)) or 0)
+        except Exception as e:
+            if verbose and netuid <= 5:
+                print(f"  DEBUG SN{netuid}: pool reserves query failed: {type(e).__name__}: {e}")
             return None
+        if alpha_in_rao <= 0 or tao_in_rao <= 0:
+            return None
+        # Both values are in their raw units (rao for TAO, rao for alpha). Ratio gives
+        # TAO-per-alpha as a plain float — matches subnet_markers.Price / 1e9 in btguru.
+        price_tao_per_alpha = tao_in_rao / alpha_in_rao
 
         per_epoch_tao = (per_epoch_alpha_rao / RAO_PER_TAO) * price_tao_per_alpha
         epochs_per_year = YEAR_BLOCKS / tempo
