@@ -74,21 +74,66 @@ async def calculate_hotkey_root_apy_snapshot(
         print(f"  DEBUG: TotalNetworks = {total_networks}")
     netuids: List[int] = [nu for nu in range(1, total_networks + 1)]
 
+    block_hash = await subtensor.substrate.get_block_hash(block)
+
+    # Diagnostic: iterate the whole DoubleMap globally to see whether it has ANY entries at
+    # this block. If empty → storage is cleared / stale at this block for everyone (not just
+    # our hotkey). If populated → key encoding issue on the per-subnet path below.
+    try:
+        map_iter = await subtensor.substrate.query_map(
+            module="SubtensorModule", storage_function="RootAlphaDividendsPerSubnet",
+            block_hash=block_hash,
+        )
+        sample_entries = []
+        count = 0
+        our_matches = 0
+        async for k, v in map_iter:
+            count += 1
+            key_str = str(getattr(k, "value", k))
+            val = unwrap_scalar(getattr(v, "value", v))
+            if hotkey in key_str:
+                our_matches += 1
+                if len(sample_entries) < 3:
+                    sample_entries.append((key_str, val))
+            if count >= 500:
+                break
+        print(f"  DEBUG: RootAlphaDividendsPerSubnet global iter — first {count} entries, matches for tao5: {our_matches}")
+        for k, v in sample_entries:
+            print(f"    key={k}  value={v}")
+    except Exception as e:
+        print(f"  DEBUG: global iter failed: {type(e).__name__}: {e}")
+
     async def one_subnet(netuid: int):
-        tempo_raw = await query_subtensor(subtensor, "Tempo", block, [netuid])
-        if not tempo_raw:
+        # Tempo — StorageMap<NetUid, u16>. Direct query is safest across bittensor versions.
+        try:
+            tempo_res = await subtensor.substrate.query(
+                module="SubtensorModule", storage_function="Tempo",
+                params=[netuid], block_hash=block_hash,
+            )
+            tempo = int(unwrap_scalar(getattr(tempo_res, "value", 0)) or 0)
+        except Exception as e:
+            if netuid <= 3:
+                print(f"  DEBUG SN{netuid}: Tempo query failed: {type(e).__name__}: {e}")
             return None
-        tempo = int(tempo_raw)
         if tempo == 0:
             return None
 
-        # Last epoch's alpha dividend for this (netuid, hotkey). Written atomically at each
-        # subnet epoch fire in coinbase.rs; cleared and rewritten at the next fire. Between
-        # fires it holds a stable "last known payout" value.
-        per_epoch_alpha_rao = await query_subtensor(
-            subtensor, "RootAlphaDividendsPerSubnet", block, [netuid, hotkey]
-        )
-        per_epoch_alpha_rao = int(per_epoch_alpha_rao) if per_epoch_alpha_rao else 0
+        # Last epoch's alpha dividend, StorageDoubleMap<NetUid, AccountId, AlphaBalance>.
+        # Cleared at start of the subnet's coinbase block, repopulated during — so between
+        # epoch fires this holds the last known per-hotkey payout for that subnet.
+        try:
+            div_res = await subtensor.substrate.query(
+                module="SubtensorModule", storage_function="RootAlphaDividendsPerSubnet",
+                params=[netuid, hotkey], block_hash=block_hash,
+            )
+            raw = unwrap_scalar(getattr(div_res, "value", 0)) or 0
+            per_epoch_alpha_rao = int(raw)
+        except Exception as e:
+            if netuid <= 3:
+                print(f"  DEBUG SN{netuid}: RootAlphaDividendsPerSubnet query failed: {type(e).__name__}: {e}")
+            return None
+        if verbose and netuid <= 5:
+            print(f"  DEBUG SN{netuid}: tempo={tempo}, per_epoch_alpha_rao={per_epoch_alpha_rao}")
         if per_epoch_alpha_rao == 0:
             return None
 
