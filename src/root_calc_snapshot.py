@@ -65,27 +65,14 @@ async def calculate_hotkey_root_apy_snapshot(
     if (not no_filters) and root_stake_tao < ROOT_MIN_STAKE_TAO:
         return 0.0, 0.0, []
 
-    # We deliberately don't use `subtensor.get_all_subnets_info(block=block)` here — it
-    # decodes fields (e.g. `burn`) that come back as tuples on post-441 mainnet and blows up
-    # inside bittensor's Balance.from_rao. Same class of bug we already worked around in the
-    # basket path. Query the primitives directly instead.
-    #
-    # 1) Enumerate active netuids from NetworksAdded (SubtensorModule).
-    # 2) For each, read Tempo(netuid) — one chain hit per subnet, cheap in parallel.
-    netuids_map = await subtensor.substrate.query_map(
-        module="SubtensorModule", storage_function="NetworksAdded",
-        block_hash=await subtensor.substrate.get_block_hash(block),
-    )
-    netuids: List[int] = []
-    async for netuid, added in netuids_map:
-        nu = getattr(netuid, "value", netuid)
-        try:
-            nu = int(nu)
-        except (TypeError, ValueError):
-            continue
-        if nu == 0:
-            continue  # root itself isn't a source of root dividends
-        netuids.append(nu)
+    # We deliberately don't use `subtensor.get_all_subnets_info(block=block)` — it decodes
+    # subnet burn as tuple on post-441 chains and blows up inside bittensor's Balance.from_rao.
+    # Enumerate netuids from TotalNetworks (single u16) + probe each with Tempo instead.
+    total_networks_raw = await query_subtensor(subtensor, "TotalNetworks", block, [])
+    total_networks = int(total_networks_raw) if total_networks_raw else 0
+    if verbose or total_networks == 0:
+        print(f"  DEBUG: TotalNetworks = {total_networks}")
+    netuids: List[int] = [nu for nu in range(1, total_networks + 1)]
 
     async def one_subnet(netuid: int):
         tempo_raw = await query_subtensor(subtensor, "Tempo", block, [netuid])
@@ -131,6 +118,15 @@ async def calculate_hotkey_root_apy_snapshot(
     # Kick off all per-subnet reads concurrently.
     results = await asyncio.gather(*[one_subnet(nu) for nu in netuids])
     contributions = [r for r in results if r is not None]
+
+    # Always-visible sanity signal: if these are empty, the storage query returned nothing
+    # or the (netuid, hotkey) key order is wrong. Verbose adds the top-N table below.
+    zero_dividend = sum(1 for r in results if r is None)
+    print(
+        f"  DEBUG: netuids probed={len(netuids)}, "
+        f"with dividend contribution={len(contributions)}, "
+        f"skipped (0 or no price)={zero_dividend}"
+    )
 
     total_annual_tao = sum(c["annual_tao"] for c in contributions)
     apy = 100.0 * total_annual_tao / root_stake_tao
